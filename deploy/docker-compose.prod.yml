@@ -1,0 +1,70 @@
+version: "3.9"
+
+networks:
+  traefik-proxy:
+    external: true
+
+volumes:
+  traefik_letsencrypt:
+  traefik_logs:
+
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entryPoints.web.address=:80
+      - --entryPoints.websecure.address=:443
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge=true
+      - --certificatesresolvers.letsencrypt.acme.dnschallenge.provider=cloudflare
+      # opcjonalne opóźnienie zanim LE sprawdzi rekord DNS (sekundy), zwykle 0-10
+      # - --certificatesresolvers.letsencrypt.acme.dnschallenge.delayBeforeCheck=0
+      - --certificatesresolvers.letsencrypt.acme.email=${LETSENCRYPT_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+      - --accesslog=true
+      - --log.level=INFO
+    environment:
+      # Traefik/lego oczekuje CF_DNS_API_TOKEN, my przekazujemy z .env zmienną CLOUDFLARE_API_TOKEN
+      CF_DNS_API_TOKEN: ${CLOUDFLARE_API_TOKEN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_letsencrypt:/letsencrypt
+      - traefik_logs:/var/log/traefik
+    networks:
+      - traefik-proxy
+
+  app:
+    image: ${IMAGE_REF:-ghcr.io/marmal6313/mosir-portal:staging}
+    container_name: mosir-portal-app
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - traefik-proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.mosir.rule=Host(`${APP_HOSTNAME}`)
+      - traefik.http.routers.mosir.entrypoints=websecure
+      - traefik.http.routers.mosir.tls=true
+      - traefik.http.routers.mosir.tls.certresolver=letsencrypt
+      - traefik.http.services.mosir.loadbalancer.server.port=3000
+      # HTTP -> HTTPS redirect
+      - traefik.http.routers.mosir-web.rule=Host(`${APP_HOSTNAME}`)
+      - traefik.http.routers.mosir-web.entrypoints=web
+      - traefik.http.routers.mosir-web.middlewares=mosir-https-redirect
+      - traefik.http.middlewares.mosir-https-redirect.redirectscheme.scheme=https

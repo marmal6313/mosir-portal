@@ -1,0 +1,13 @@
+# Protect Gantt files from automatic refactors.
+In files matching:
+- components/GanttChart.tsx
+- app/dashboard/gantt/page.tsx
+
+Rules:
+- Do not rename or change exports.
+- Keep the named export `GanttChart` and the type `GanttItem`.
+- Do not reorder React hooks, do not wrap hooks in conditionals.
+- Do not add or remove framer-motion imports automatically.
+- Only modify these files if I explicitly ask: "edit gantt".
+
+

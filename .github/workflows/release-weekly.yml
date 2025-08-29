@@ -1,0 +1,28 @@
+name: Release Weekly
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Poniedziałek 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  tag-release:
+    name: Tag release-YYYYMMDD from main
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare tag
+        id: t
+        run: |
+          DATE=$(date -u +%Y%m%d)
+          echo "TAG=release-${DATE}" >> $GITHUB_OUTPUT
+      - name: Create tag
+        run: |
+          git fetch origin main
+          git tag -f ${{ steps.t.outputs.TAG }} origin/main
+          git push -f origin refs/tags/${{ steps.t.outputs.TAG }}
+

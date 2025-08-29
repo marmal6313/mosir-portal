@@ -1,0 +1,53 @@
+version: "3.9"
+
+networks:
+  web:
+    external: false
+
+services:
+  traefik:
+    image: traefik:v3.1
+    container_name: traefik-staging
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entryPoints.web.address=:80
+      - --accesslog=true
+      - --log.level=INFO
+    ports:
+      - "8080:80"   # lokalnie serwujemy przez http://localhost:8080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - web
+
+  app:
+    build:
+      context: ..
+      dockerfile: ../Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    image: mosir-portal:staging-local
+    container_name: mosir-portal-app-staging
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - web
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.mosir-staging.rule=PathPrefix(`/`)
+      - traefik.http.routers.mosir-staging.entrypoints=web
+      - traefik.http.services.mosir-staging.loadbalancer.server.port=3000
+

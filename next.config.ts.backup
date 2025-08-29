@@ -1,0 +1,39 @@
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  // Włączamy output standalone dla Docker
+  output: 'standalone',
+  
+  // Optymalizacja dla production
+  experimental: {
+    // Wyłączamy SWC minifier który może powodować problemy w Alpine Linux
+    swcMinify: true,
+  },
+  
+  // Konfiguracja dla Supabase
+  env: {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  },
+  
+  // Dodatkowe nagłówki bezpieczeństwa
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+        ],
+      },
+    ];
+  },
+};
+
+export default nextConfig;

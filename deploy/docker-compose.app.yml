@@ -1,0 +1,37 @@
+version: "3.9"
+
+networks:
+  proxy:
+    external: true
+    name: ${TRAEFIK_NETWORK:-traefik-proxy}
+
+services:
+  app:
+    image: ${IMAGE_REF:-ghcr.io/marmal6313/mosir-portal:staging}
+    container_name: mosir-portal-app
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - proxy
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.mosir.rule=Host(`${APP_HOSTNAME}`)
+      - traefik.http.routers.mosir.entrypoints=websecure
+      - traefik.http.routers.mosir.tls=true
+      - traefik.http.services.mosir.loadbalancer.server.port=3000
+      # optional HTTP -> HTTPS redirect (requires 'web' entrypoint on existing Traefik)
+      - traefik.http.routers.mosir-web.rule=Host(`${APP_HOSTNAME}`)
+      - traefik.http.routers.mosir-web.entrypoints=web
+      - traefik.http.routers.mosir-web.middlewares=mosir-https-redirect
+      - traefik.http.middlewares.mosir-https-redirect.redirectscheme.scheme=https
+

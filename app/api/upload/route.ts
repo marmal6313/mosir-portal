@@ -11,8 +11,9 @@ const LIMIT = 20 // 20 zapytań/min/IP
 
 function checkRateLimit(req: NextRequest) {
   const ip =
+    req.headers.get('cf-connecting-ip') ||
     req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-    req.ip ||
+    req.headers.get('x-real-ip') ||
     'unknown'
   const now = Date.now()
   const rec = rateMap.get(ip)

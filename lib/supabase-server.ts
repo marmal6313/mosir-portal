@@ -20,11 +20,13 @@ export async function getCurrentUserWithRole() {
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) return { user: null, profile: null as any }
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('users_with_details')
     .select('*')
     .eq('id', user.id)
     .single()
+
+  if (profileError || !profile) return { user, profile: null as any }
 
   return { user, profile }
 }

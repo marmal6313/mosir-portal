@@ -88,7 +88,10 @@ export async function DELETE(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: 'Nieautoryzowany' }, { status: 401 })
     }
-    const role = profile?.role
+    if (!profile || !profile.role) {
+      return NextResponse.json({ error: 'Brak profilu użytkownika' }, { status: 403 })
+    }
+    const role = profile.role
     if (!(role === 'superadmin' || role === 'dyrektor')) {
       return NextResponse.json({ error: 'Brak uprawnień do usuwania' }, { status: 403 })
     }

@@ -3,15 +3,13 @@ import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { Database } from '@/types/database'
 
 export function createSupabaseServerClient() {
-  const cookieStore = cookies()
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  return createServerComponentClient<Database>(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value
-      },
-    },
+  return createServerComponentClient<Database>({
+    cookies: () => cookies()
+  }, {
+    supabaseUrl,
+    supabaseKey: supabaseAnonKey
   })
 }
 

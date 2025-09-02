@@ -67,13 +67,27 @@ jobs:
     environment: production
     if: always()
     steps:
-      - name: Connect to Tailscale (for SSH to 100.x)
-        uses: tailscale/github-action@v2
-        with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
-          hostname: gh-actions-deploy
-          tags: tag:github
-          version: 1.66.3
+      - name: Connect to Tailscale
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo bash -c "curl -fsSL https://tailscale.com/install.sh | sh"
+          sudo nohup tailscaled >/dev/null 2>&1 &
+          sleep 3
+          HOSTNAME=gh-actions-deploy
+          if [ -n "${{ secrets.TS_AUTHKEY }}" ]; then
+            echo "Using TS_AUTHKEY"
+            sudo tailscale up --authkey="${{ secrets.TS_AUTHKEY }}" --hostname="$HOSTNAME" --accept-dns=true --accept-routes=true
+          elif [ -n "${{ secrets.TS_OAUTH_CLIENT_ID }}" ] && [ -n "${{ secrets.TS_OAUTH_CLIENT_SECRET }}" ]; then
+            echo "Using OAuth client credentials"
+            sudo tailscale up \
+              --oauth-client-id="${{ secrets.TS_OAUTH_CLIENT_ID }}" \
+              --oauth-client-secret="${{ secrets.TS_OAUTH_CLIENT_SECRET }}" \
+              --hostname="$HOSTNAME" --accept-dns=true --accept-routes=true
+          else
+            echo "::error::Neither TS_AUTHKEY nor TS_OAUTH_CLIENT_ID/TS_OAUTH_CLIENT_SECRET provided"
+            exit 1
+          fi
       - name: Prepare IMAGE_REF
         id: ref
         run: echo "IMAGE_REF=ghcr.io/${{ github.repository }}:${{ needs.build-and-push.outputs.tag }}" >> $GITHUB_OUTPUT

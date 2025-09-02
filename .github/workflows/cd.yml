@@ -79,7 +79,7 @@ jobs:
         uses: tailscale/github-action@v2
         with:
           oauth-client-id: ${{ env.TS_OAUTH_CLIENT_ID }}
-          oauth-client-secret: ${{ env.TS_OAUTH_CLIENT_SECRET }}
+          oauth-secret: ${{ env.TS_OAUTH_CLIENT_SECRET }}
           hostname: gh-actions-deploy
           tags: ${{ env.TS_TAGS || 'tag:github' }}
       - name: Connect to Tailscale (Auth key)

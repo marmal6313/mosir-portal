@@ -74,30 +74,111 @@ jobs:
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_PORT: ${{ secrets.SSH_PORT }}
     steps:
-      - name: Connect to Tailscale (OAuth)
-        if: ${{ env.TS_OAUTH_CLIENT_ID != '' && env.TS_OAUTH_CLIENT_SECRET != '' }}
+      - name: Connect to Tailscale (OAuth, with tags)
+        if: ${{ env.TS_OAUTH_CLIENT_ID != '' && env.TS_OAUTH_CLIENT_SECRET != '' && env.TS_TAGS != '' }}
         uses: tailscale/github-action@v2
         with:
           oauth-client-id: ${{ env.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ env.TS_OAUTH_CLIENT_SECRET }}
           hostname: gh-actions-deploy
-          tags: ${{ env.TS_TAGS || 'tag:github' }}
-      - name: Connect to Tailscale (Auth key)
-        if: ${{ (env.TS_OAUTH_CLIENT_ID == '' || env.TS_OAUTH_CLIENT_SECRET == '') && env.TS_AUTHKEY != '' }}
+          tags: ${{ env.TS_TAGS }}
+      - name: Connect to Tailscale (OAuth)
+        if: ${{ env.TS_OAUTH_CLIENT_ID != '' && env.TS_OAUTH_CLIENT_SECRET != '' && env.TS_TAGS == '' }}
+        uses: tailscale/github-action@v2
+        with:
+          oauth-client-id: ${{ env.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ env.TS_OAUTH_CLIENT_SECRET }}
+          hostname: gh-actions-deploy
+      - name: Connect to Tailscale (Auth key, with tags)
+        if: ${{ (env.TS_OAUTH_CLIENT_ID == '' || env.TS_OAUTH_CLIENT_SECRET == '') && env.TS_AUTHKEY != '' && env.TS_TAGS != '' }}
         uses: tailscale/github-action@v2
         with:
           authkey: ${{ env.TS_AUTHKEY }}
           hostname: gh-actions-deploy
-          tags: ${{ env.TS_TAGS || 'tag:github' }}
+          tags: ${{ env.TS_TAGS }}
+      - name: Connect to Tailscale (Auth key)
+        if: ${{ (env.TS_OAUTH_CLIENT_ID == '' || env.TS_OAUTH_CLIENT_SECRET == '') && env.TS_AUTHKEY != '' && env.TS_TAGS == '' }}
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ env.TS_AUTHKEY }}
+          hostname: gh-actions-deploy
       - name: Prepare IMAGE_REF
         id: ref
         run: echo "IMAGE_REF=ghcr.io/${{ github.repository }}:${{ needs.build-and-push.outputs.tag }}" >> $GITHUB_OUTPUT
+      - name: Verify Tailscale connectivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Self status:"
+          tailscale status --self || true
+          if [ -n "${{ secrets.SSH_HOST }}" ]; then
+            echo "Pinging ${{ secrets.SSH_HOST }} via Tailscale..."
+            tailscale ping -c 3 "${{ secrets.SSH_HOST }}"
+          else
+            echo "SSH_HOST secret is empty; skipping tailscale ping" >&2
+          fi
+      - name: Validate SSH secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then
+            echo "Missing required secret: SSH_HOST" >&2
+            exit 1
+          fi
+          if [ -z "${{ secrets.SSH_KEY }}" ]; then
+            echo "Missing required secret: SSH_KEY (private key)" >&2
+            exit 1
+          fi
+          # Validate that the key looks like an OpenSSH private key (multi-line, with proper header)
+          if ! (echo "${{ secrets.SSH_KEY }}" | grep -q "BEGIN OPENSSH PRIVATE KEY\|-BEGIN RSA PRIVATE KEY"); then
+            echo "SSH_KEY does not look like a valid private key. Ensure it is multi-line and includes BEGIN/END headers." >&2
+            exit 1
+          fi
+      - name: Check SSH_KEY_PASSPHRASE presence
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${{ secrets.SSH_KEY_PASSPHRASE }}" ]; then
+            echo "NOTE: SSH_KEY_PASSPHRASE is empty or not defined in Secrets for environment 'production'." >&2
+            echo "If your SSH_KEY is passphrase-protected, add it under Settings → Environments → production → Secrets." >&2
+          else
+            echo "SSH_KEY_PASSPHRASE is set (masked)."
+          fi
+      - name: Write SSH key to file
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "${{ secrets.SSH_KEY }}" > id_gha
+          ls -l id_gha
+      - name: Validate SSH key decryptability
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ]; then
+            if ssh-keygen -y -P "${{ secrets.SSH_KEY_PASSPHRASE }}" -f id_gha >/dev/null 2>&1; then
+              echo "SSH key decrypted successfully with provided passphrase."
+            else
+              echo "ERROR: Failed to decrypt SSH_KEY with SSH_KEY_PASSPHRASE. Check the passphrase or remove it from the key for CI use." >&2
+              exit 1
+            fi
+          else
+            # No passphrase provided; verify key is usable without passphrase
+            if ssh-keygen -y -f id_gha >/dev/null 2>&1; then
+              echo "SSH key is usable without passphrase."
+            else
+              echo "ERROR: SSH_KEY appears to be passphrase-protected, but SSH_KEY_PASSPHRASE is empty." >&2
+              echo "Either set SSH_KEY_PASSPHRASE secret or remove the passphrase from the key and update SSH_KEY." >&2
+              exit 1
+            fi
+          fi
       - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ env.SSH_USER || 'deploy' }}
-          key: ${{ secrets.SSH_KEY }}
+          key_path: id_gha
+          passphrase: ${{ secrets.SSH_KEY_PASSPHRASE }}
           port: ${{ env.SSH_PORT || 22 }}
           script_stop: true
           script: |

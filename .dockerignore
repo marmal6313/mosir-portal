@@ -10,3 +10,6 @@ Dockerfile*
 docker-compose*
 *.sql
 test-*
+docs-portal
+docs
+_archive

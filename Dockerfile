@@ -11,6 +11,10 @@ RUN npm ci
 # Kopiuj kod aplikacji
 COPY . .
 
+# Usuń katalogi dokumentacji/testów, które nie są potrzebne do build/runtime
+# (zapobiega błędom type-checkera związanym z Docusaurusem itp.)
+RUN rm -rf ./docs-portal ./docs ./_archive
+
 # Narzędzia pomocnicze dla healthcheck (curl)
 RUN apk add --no-cache curl
 
@@ -23,7 +27,7 @@ ENV NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
 
 # Wyłącz telemetrię Next.js
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NEXT_TELEMETRY_DISABLED=1
 
 # Zbuduj aplikację
 RUN npm run build

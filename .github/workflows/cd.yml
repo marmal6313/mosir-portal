@@ -57,6 +57,9 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
   
   deploy:
     needs: build-and-push
@@ -64,6 +67,13 @@ jobs:
     environment: production
     if: always()
     steps:
+      - name: Connect to Tailscale (for SSH to 100.x)
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          hostname: gh-actions-deploy
+          tags: tag:github
+          version: 1.66.3
       - name: Prepare IMAGE_REF
         id: ref
         run: echo "IMAGE_REF=ghcr.io/${{ github.repository }}:${{ needs.build-and-push.outputs.tag }}" >> $GITHUB_OUTPUT
@@ -71,7 +81,7 @@ jobs:
         uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
+          username: ${{ secrets.SSH_USER || 'deploy' }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script_stop: true
@@ -92,4 +102,26 @@ jobs:
             fi
             # Konfiguruj IMAGE_REF i odpal deployer
             export IMAGE_REF="${{ steps.ref.outputs.IMAGE_REF }}"
+            # Wymuś wariant app-only, chyba że nadpisany sekretem DEPLOY_MODE
+            export DEPLOY_MODE="${{ secrets.DEPLOY_MODE }}"
+            if [ -z "$DEPLOY_MODE" ]; then export DEPLOY_MODE=app-only; fi
             bash scripts/deploy.sh
+      - name: Smoke test /api/health
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST="${{ secrets.APP_HOSTNAME }}"
+          if [ -z "${HOST}" ]; then HOST="app.e-mosir.pl"; fi
+          echo "Checking https://${HOST}/api/health"
+          for i in {1..30}; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "https://${HOST}/api/health" || true)
+            if [ "$code" = "200" ]; then
+              echo "Healthcheck OK (200)"
+              exit 0
+            fi
+            echo "Attempt $i/30: status=$code; retrying in 5s..."
+            sleep 5
+          done
+          echo "Smoke test failed: /api/health did not return 200"
+          exit 1

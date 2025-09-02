@@ -75,19 +75,21 @@ jobs:
           sudo nohup tailscaled >/dev/null 2>&1 &
           sleep 3
           HOSTNAME=gh-actions-deploy
+          TAGS="${{ secrets.TS_TAGS }}"
+          TAGS_FLAG=""
+          if [ -n "$TAGS" ]; then TAGS_FLAG="--advertise-tags=$TAGS"; fi
           if [ -n "${{ secrets.TS_AUTHKEY }}" ]; then
             echo "Using TS_AUTHKEY"
-            sudo tailscale up --authkey="${{ secrets.TS_AUTHKEY }}" --hostname="$HOSTNAME" --accept-dns=true --accept-routes=true
+            sudo tailscale up --auth-key="${{ secrets.TS_AUTHKEY }}" --hostname="$HOSTNAME" --accept-dns=true --accept-routes=true $TAGS_FLAG
           elif [ -n "${{ secrets.TS_OAUTH_CLIENT_ID }}" ] && [ -n "${{ secrets.TS_OAUTH_CLIENT_SECRET }}" ]; then
             echo "Using OAuth client credentials"
-            sudo tailscale up \
-              --oauth-client-id="${{ secrets.TS_OAUTH_CLIENT_ID }}" \
-              --oauth-client-secret="${{ secrets.TS_OAUTH_CLIENT_SECRET }}" \
-              --hostname="$HOSTNAME" --accept-dns=true --accept-routes=true
+            sudo tailscale login --oauth-client-id="${{ secrets.TS_OAUTH_CLIENT_ID }}" --oauth-client-secret="${{ secrets.TS_OAUTH_CLIENT_SECRET }}"
+            sudo tailscale up --hostname="$HOSTNAME" --accept-dns=true --accept-routes=true $TAGS_FLAG
           else
             echo "::error::Neither TS_AUTHKEY nor TS_OAUTH_CLIENT_ID/TS_OAUTH_CLIENT_SECRET provided"
             exit 1
           fi
+          sudo tailscale status
       - name: Prepare IMAGE_REF
         id: ref
         run: echo "IMAGE_REF=ghcr.io/${{ github.repository }}:${{ needs.build-and-push.outputs.tag }}" >> $GITHUB_OUTPUT

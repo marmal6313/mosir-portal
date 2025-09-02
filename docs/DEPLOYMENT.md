@@ -66,10 +66,11 @@
 **Jeśli masz już Traefika (np. z n8n)**
 - Użyj stacku „app‑only”: `deploy/docker-compose.app.yml` (nie uruchamia własnego Traefika).
 - Ustaw, do jakiej sieci dołączyć: `export TRAEFIK_NETWORK=n8n-compose_default` (lub nazwa Twojej sieci).
+- Domyślnie router działa po HTTP na entrypoincie `web` (kompatybilne z Cloudflare SSL mode: Flexible).
 - Uruchom:
   - `cd /opt/mosir-portal/deploy`
   - `docker compose -f docker-compose.app.yml --env-file ./.env up -d`
-- Traefik „n8n” powinien mieć entrypointy `web` i `websecure` — jeśli nazwy inne, zaktualizuj etykiety w compose.
+- Jeśli chcesz przejść na Full (strict): skonfiguruj certyfikat po stronie Traefika (ACME DNS‑01/Origin Cert) i dodaj etykietę TLS.
 
 **Pierwsze wdrożenie bez GHCR (lokalny build)**
 - Gdy obraz nie jest jeszcze opublikowany w GHCR, użyj: `deploy/docker-compose.app-build.yml`.
@@ -78,6 +79,11 @@
   - `cd /opt/mosir-portal/deploy`
   - `docker compose -f docker-compose.app-build.yml --env-file ./.env up -d --build`
 - Po opublikowaniu obrazu w GHCR przejdź na `docker-compose.app.yml` lub na pełny stack z naszym Traefikiem.
+
+**Cloudflare SSL/TLS tryb**
+- Szybki start: ustaw „SSL/TLS → Flexible” (Cloudflare łączy się z origin po HTTP). Nasze etykiety Traefika obsługują `web` bez redirectu.
+- Docelowo: „Full (strict)” (Cloudflare → HTTPS do origin). Wtedy skonfiguruj w Traefiku ważny cert dla `app.e-mosir.pl` (np. ACME DNS‑01) i dodaj etykietę `traefik.http.routers.mosir.tls=true` oraz `...tls.certresolver=<nazwa>`.
+- Upewnij się, że rekord DNS `app` wskazuje na publiczny IP serwera (A/AAAA, Proxied). Unikaj CNAME do Cloudflare Tunnel, jeśli nie używasz cloudflared.
 
 **Podpięcie n8n za Traefikiem (przykład)**
 - W compose n8n usuń mapowania portów 80/443; dołącz do sieci: `networks: [traefik-proxy]`.
@@ -89,6 +95,21 @@
   - `traefik.http.routers.n8n.tls.certresolver=letsencrypt`
   - `traefik.http.services.n8n.loadbalancer.server.port=5678`
 - Zmienne n8n (za proxy): `N8N_HOST=n8n.e-mosir.pl`, `N8N_PROTOCOL=https`, `WEBHOOK_URL=https://n8n.e-mosir.pl/`.
+
+**Cloudflare Tunnel (dynamiczny IP — rekomendowane)**
+- Gdy rekord `app` jest CNAME → `<UUID>.cfargotunnel.com`, uruchom tunel na serwerze.
+- Kroki:
+  - Cloudflare Zero Trust → Access → Tunnels → utwórz Named Tunnel i dodaj Public Hostname:
+    - `app.e-mosir.pl` → `http://mosir-portal-app:3000`
+  - W `deploy/.env` ustaw `CLOUDFLARE_TUNNEL_TOKEN=<token z CF>`.
+  - Dołącz cloudflared do tej samej sieci co aplikacja: `export TRAEFIK_NETWORK=n8n-compose_default`.
+  - Uruchom: `docker compose -f deploy/cloudflared.yml --env-file deploy/.env up -d`.
+  - Test: `curl -I https://app.e-mosir.pl/api/health` → 200.
+- Uwaga: w tym wariancie Cloudflare łączy się do origin po HTTP w sieci Dockera; Traefik może być nadal używany dla innych usług.
+
+**SSH i dostęp administracyjny (Tailscale — rekomendowane)**
+- Przy zmiennym publicznym IP korzystaj z Tailscale do SSH (stabilny adres 100.x lub nazwa MagicDNS).
+- Opcjonalnie włącz Tailscale SSH na serwerze, aby logować się bezpośrednio po tailnet.
 
 **Backupy**
 - Jeżeli trzymasz stan na serwerze (raczej nie — Supabase/Sentry mają własne DB), automatyzuj backup wolumenów i Traefika (`letsencrypt/acme.json`).

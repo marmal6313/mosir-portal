@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 set -o errtrace
-PS4='+ ${BASH_SOURCE}:${LINENO}:${FUNCNAME[0]}() '
+# Ustaw PS4 defensywnie (działa nawet gdy FUNCNAME/BASH_SOURCE są puste)
+PS4='+ ${BASH_SOURCE:-${0}}:${LINENO}:${FUNCNAME[0]:-main}() '
 set -x
 
 # Bardziej czytelny raport błędów
-trap 'rc=$?; echo "[deploy.sh] ERROR rc=$rc at ${BASH_SOURCE}:${LINENO} running: ${BASH_COMMAND}" >&2; exit $rc' ERR
+trap 'rc=$?; echo "[deploy.sh] ERROR rc=$rc at ${BASH_SOURCE:-${0}}:${LINENO} running: ${BASH_COMMAND}" >&2; exit $rc' ERR
 
 # Prosty deployer dla single-host. Uruchamiaj na serwerze.
 

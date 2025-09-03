@@ -116,6 +116,26 @@ jobs:
           echo "Has PASSPHRASE: $([ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ] && echo yes || echo no)"
           echo "SSH_PORT set: $([ -n "${{ secrets.SSH_PORT }}" ] && echo yes || echo no)"
           echo "APP_PATH set: $([ -n "${{ secrets.APP_PATH }}" ] && echo yes || echo no)"
+      - name: Test SSH Connection
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key_path: id_gha
+          passphrase: ${{ secrets.SSH_KEY_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT != '' && secrets.SSH_PORT || 22 }}
+          debug: true
+          script: |
+            echo "=== Basic SSH Test ==="
+            whoami || true
+            pwd || true
+            echo "Current directory contents:"
+            ls -la || true
+            echo "Docker version (if available):"
+            docker --version || echo "Docker not available"
+            echo "Git version (if available):"
+            git --version || echo "Git not available"
+            echo "=== Test completed ==="
       - name: Verify Tailscale connectivity
         shell: bash
         run: |
@@ -208,33 +228,40 @@ jobs:
             export GIT_TRACE=1
             export GIT_CURL_VERBOSE=1
             APP_PATH=${{ secrets.APP_PATH }}
-            if [ -z "$APP_PATH" ]; then
-              echo "ERROR: APP_PATH secret is empty" >&2
-              exit 1
-            fi
+            case "$APP_PATH" in
+              "") echo "ERROR: APP_PATH secret is empty" >&2; exit 1;;
+              *) :;;
+            esac
             mkdir -p "$APP_PATH"
             cd "$APP_PATH"
-            # Diagnostyka środowiska
+            # Diagnostyka środowiska (opakowane, aby nie powodować niezerowych kodów)
             command -v docker || true
-            docker --version || true
-            docker compose version || docker-compose --version || true
-            # Inicjalizacja: sklonuj repo raz, potem tylko pull
-            if [ ! -d .git ]; then
-              git init
-              git remote add origin https://github.com/${{ github.repository }}.git
-              git fetch --depth=1 origin main || true
-              git checkout -f FETCH_HEAD || true
-            else
-              git fetch --depth=1 origin main || true
-              git reset --hard FETCH_HEAD || true
-            fi
+            bash -lc 'docker --version >/dev/null 2>&1 || true'
+            bash -lc 'docker compose version >/dev/null 2>&1 || docker-compose --version >/dev/null 2>&1 || true'
+            # Inicjalizacja / aktualizacja repo bez poleceń, które mogą zwrócić 1 w warunku
+            shopt -s nullglob
+            set -- .git
+            case "$#" in
+              1)
+                echo "Git repository exists, updating..."
+                git fetch --depth=1 origin main || true
+                git reset --hard FETCH_HEAD || true
+                ;;
+              0)
+                echo "No git repository, initializing..."
+                git init
+                git remote add origin https://github.com/${{ github.repository }}.git
+                git fetch --depth=1 origin main || true
+                git checkout -f FETCH_HEAD || true
+                ;;
+            esac
             git rev-parse HEAD || true
             git log -1 --oneline || true
             # Konfiguruj IMAGE_REF i odpal deployer
             export IMAGE_REF="${{ steps.ref.outputs.IMAGE_REF }}"
             # Wymuś wariant app-only, chyba że nadpisany sekretem DEPLOY_MODE
             export DEPLOY_MODE="${{ secrets.DEPLOY_MODE }}"
-            if [ -z "$DEPLOY_MODE" ]; then export DEPLOY_MODE=app-only; fi
+            case "$DEPLOY_MODE" in "") DEPLOY_MODE=app-only;; esac
             echo "IMAGE_REF=$IMAGE_REF"
             echo "DEPLOY_MODE=$DEPLOY_MODE"
             bash scripts/deploy.sh

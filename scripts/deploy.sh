@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
+set -o errtrace
+PS4='+ ${BASH_SOURCE}:${LINENO}:${FUNCNAME[0]}() '
+set -x
+
+# Bardziej czytelny raport błędów
+trap 'rc=$?; echo "[deploy.sh] ERROR rc=$rc at ${BASH_SOURCE}:${LINENO} running: ${BASH_COMMAND}" >&2; exit $rc' ERR
 
 # Prosty deployer dla single-host. Uruchamiaj na serwerze.
 
@@ -7,6 +13,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$APP_ROOT/deploy"
+
+# Ustal polecenie docker compose (plugin vs docker-compose v1)
+dc() {
+  if docker compose version >/dev/null 2>&1; then
+    docker compose "$@"
+  else
+    docker-compose "$@"
+  fi
+}
+
+# Wstępne sprawdzenia środowiska
+if ! command -v docker >/dev/null 2>&1; then
+  echo "ERROR: Docker nie jest zainstalowany lub nie jest w PATH" >&2
+  exit 1
+fi
+
+if ! docker info >/dev/null 2>&1; then
+  echo "ERROR: Brak uprawnień do Docker (sprawdź grupę docker / sudo)" >&2
+  exit 1
+fi
+
+echo "[deploy.sh] APP_ROOT=$APP_ROOT"
+echo "[deploy.sh] PWD=$(pwd)"
+echo "[deploy.sh] DEPLOY_MODE=${DEPLOY_MODE:-} | IMAGE_REF=${IMAGE_REF:-} | IMAGE_TAG=${IMAGE_TAG:-} | PROXY_NETWORK=${PROXY_NETWORK:-}"
+echo "[deploy.sh] docker version: $(docker --version 2>/dev/null || echo 'n/a')"
+docker context ls || true
 
 export IMAGE_TAG="${IMAGE_TAG:-}"           # opcjonalnie nadpisz tag w locie
 export IMAGE_REF="${IMAGE_REF:-}"           # lub pełny ref (ghcr.io/org/repo:tag)
@@ -26,31 +58,35 @@ if [ "$DEPLOY_MODE" = "app-only" ]; then
   echo "==> DEPLOY_MODE=app-only (Cloudflare Tunnel / existing Traefik)"
   # Wariant bez naszego Traefika — tylko aplikacja na zewnętrznej sieci reverse proxy
   echo "==> Ensuring external network '$PROXY_NETWORK' exists"
+  docker network ls
   docker network inspect "$PROXY_NETWORK" >/dev/null 2>&1 || docker network create "$PROXY_NETWORK"
 
   echo "==> Pulling app image"
-  docker compose -f docker-compose.app.yml pull || true
+  dc -f docker-compose.app.yml pull || true
 
   # Opcjonalnie uruchom cloudflared, jeśli skonfigurowano token i kontener nie działa
   if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
     if ! docker ps --format '{{.Names}}' | grep -q '^cloudflared$'; then
       echo "==> Starting cloudflared tunnel"
-      docker compose -f cloudflared.yml --env-file ./.env up -d
+      dc -f cloudflared.yml --env-file ./.env up -d
     fi
   fi
 
   echo "==> Starting/Updating app service"
-  docker compose -f docker-compose.app.yml --env-file ./.env up -d
+  dc -f docker-compose.app.yml --env-file ./.env up -d
+  dc -f docker-compose.app.yml ps || true
 else
   echo "==> DEPLOY_MODE=prod (Traefik + app)"
   echo "==> Ensuring external network '$PROXY_NETWORK' exists"
+  docker network ls
   docker network inspect "$PROXY_NETWORK" >/dev/null 2>&1 || docker network create "$PROXY_NETWORK"
 
   echo "==> Pulling images"
-  docker compose -f docker-compose.prod.yml pull
+  dc -f docker-compose.prod.yml pull
 
   echo "==> Starting/Updating stack"
-  docker compose -f docker-compose.prod.yml up -d
+  dc -f docker-compose.prod.yml up -d
+  dc -f docker-compose.prod.yml ps || true
 fi
 
 echo "==> Pruning old images (optional)"

@@ -189,12 +189,24 @@ jobs:
           key_path: id_gha
           passphrase: ${{ secrets.SSH_KEY_PASSPHRASE }}
           port: ${{ env.SSH_PORT || 22 }}
+          debug: true
           script_stop: true
           script: |
             set -euo pipefail
+            set -x
+            export GIT_TRACE=1
+            export GIT_CURL_VERBOSE=1
             APP_PATH=${{ secrets.APP_PATH }}
+            if [ -z "$APP_PATH" ]; then
+              echo "ERROR: APP_PATH secret is empty" >&2
+              exit 1
+            fi
             mkdir -p "$APP_PATH"
             cd "$APP_PATH"
+            # Diagnostyka środowiska
+            command -v docker || true
+            docker --version || true
+            docker compose version || docker-compose --version || true
             # Inicjalizacja: sklonuj repo raz, potem tylko pull
             if [ ! -d .git ]; then
               git init
@@ -205,11 +217,15 @@ jobs:
               git fetch --depth=1 origin main || true
               git reset --hard FETCH_HEAD || true
             fi
+            git rev-parse HEAD || true
+            git log -1 --oneline || true
             # Konfiguruj IMAGE_REF i odpal deployer
             export IMAGE_REF="${{ steps.ref.outputs.IMAGE_REF }}"
             # Wymuś wariant app-only, chyba że nadpisany sekretem DEPLOY_MODE
             export DEPLOY_MODE="${{ secrets.DEPLOY_MODE }}"
             if [ -z "$DEPLOY_MODE" ]; then export DEPLOY_MODE=app-only; fi
+            echo "IMAGE_REF=$IMAGE_REF"
+            echo "DEPLOY_MODE=$DEPLOY_MODE"
             bash scripts/deploy.sh
       - name: Smoke test /api/health
         if: ${{ success() }}

@@ -105,6 +105,37 @@ jobs:
       - name: Prepare IMAGE_REF
         id: ref
         run: echo "IMAGE_REF=ghcr.io/${{ github.repository }}:${{ needs.build-and-push.outputs.tag }}" >> $GITHUB_OUTPUT
+      - name: Debug inputs summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "== Debug: Inputs summary (masked) =="
+          echo "Has SSH_HOST: $([ -n "${{ secrets.SSH_HOST }}" ] && echo yes || echo no)"
+          echo "Has SSH_USER: $([ -n "${{ secrets.SSH_USER }}" ] && echo yes || echo no)"
+          echo "Has SSH_KEY:  $([ -n "${{ secrets.SSH_KEY }}" ] && echo yes || echo no)"
+          echo "Has PASSPHRASE: $([ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ] && echo yes || echo no)"
+          echo "SSH_PORT set: $([ -n "${{ secrets.SSH_PORT }}" ] && echo yes || echo no)"
+          echo "APP_PATH set: $([ -n "${{ secrets.APP_PATH }}" ] && echo yes || echo no)"
+      - name: Test SSH Connection
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          passphrase: ${{ secrets.SSH_KEY_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT != '' && secrets.SSH_PORT || 22 }}
+          debug: true
+          script: |
+            echo "=== Basic SSH Test ==="
+            whoami || true
+            pwd || true
+            echo "Current directory contents:"
+            ls -la || true
+            echo "Docker version (if available):"
+            docker --version || echo "Docker not available"
+            echo "Git version (if available):"
+            git --version || echo "Git not available"
+            echo "=== Test completed ==="
       - name: Verify Tailscale connectivity
         shell: bash
         run: |
@@ -185,32 +216,121 @@ jobs:
         uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.SSH_HOST }}
-          username: ${{ env.SSH_USER || 'deploy' }}
-          key_path: id_gha
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
           passphrase: ${{ secrets.SSH_KEY_PASSPHRASE }}
-          port: ${{ env.SSH_PORT || 22 }}
+          port: ${{ secrets.SSH_PORT != '' && secrets.SSH_PORT || 22 }}
+          debug: true
           script_stop: true
           script: |
             set -euo pipefail
-            APP_PATH=${{ secrets.APP_PATH }}
+            set -x
+            export GIT_TRACE=1
+            export GIT_CURL_VERBOSE=1
+
+            APP_PATH="${{ secrets.APP_PATH }}"
+            if [ -z "$APP_PATH" ]; then
+              echo "ERROR: APP_PATH secret is empty" >&2
+              exit 1
+            fi
+
             mkdir -p "$APP_PATH"
             cd "$APP_PATH"
-            # Inicjalizacja: sklonuj repo raz, potem tylko pull
-            if [ ! -d .git ]; then
+
+            echo "=== Environment check ==="
+            command -v docker || echo "Docker not found"
+            docker --version || echo "Docker not working"
+            docker compose version || docker-compose --version || echo "Docker Compose not available"
+
+            echo "=== Checking .env presence ==="
+            if [ ! -f .env ]; then
+              echo "No .env found — creating minimal one from secrets"
+              APP_HOSTNAME_VAL="${{ secrets.APP_HOSTNAME }}"
+              TRAEFIK_NETWORK_VAL="${{ secrets.TRAEFIK_NETWORK }}"
+              CF_TUNNEL_TOKEN_VAL="${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}"
+              if [ -z "$TRAEFIK_NETWORK_VAL" ]; then TRAEFIK_NETWORK_VAL="traefik-proxy"; fi
+              if [ -z "$APP_HOSTNAME_VAL" ]; then
+                echo "ERROR: APP_HOSTNAME secret is empty — cannot create routing rule for Traefik." >&2
+                exit 1
+              fi
+              {
+                echo "APP_HOSTNAME=$APP_HOSTNAME_VAL"
+                echo "TRAEFIK_NETWORK=$TRAEFIK_NETWORK_VAL"
+                if [ -n "$CF_TUNNEL_TOKEN_VAL" ]; then echo "CLOUDFLARE_TUNNEL_TOKEN=$CF_TUNNEL_TOKEN_VAL"; fi
+              } > .env
+              chmod 600 .env
+            else
+              echo "Found .env; kluczowe wartości:"
+              grep -E '^(APP_HOSTNAME|TRAEFIK_NETWORK|CLOUDFLARE_TUNNEL_TOKEN)=' .env || true
+            fi
+
+            echo "=== Git operations ==="
+            if [ -e .git ]; then
+              echo "Git repository exists, updating..."
+              git fetch --depth=1 origin main || true
+              git reset --hard FETCH_HEAD || true
+            else
+              echo "No git repository, initializing..."
               git init
               git remote add origin https://github.com/${{ github.repository }}.git
               git fetch --depth=1 origin main || true
               git checkout -f FETCH_HEAD || true
-            else
-              git fetch --depth=1 origin main || true
-              git reset --hard FETCH_HEAD || true
             fi
-            # Konfiguruj IMAGE_REF i odpal deployer
+
+            git rev-parse HEAD || true
+            git log -1 --oneline || true
+
+            echo "=== Configuration ==="
             export IMAGE_REF="${{ steps.ref.outputs.IMAGE_REF }}"
-            # Wymuś wariant app-only, chyba że nadpisany sekretem DEPLOY_MODE
             export DEPLOY_MODE="${{ secrets.DEPLOY_MODE }}"
-            if [ -z "$DEPLOY_MODE" ]; then export DEPLOY_MODE=app-only; fi
-            bash scripts/deploy.sh
+            if [ -z "$DEPLOY_MODE" ]; then DEPLOY_MODE=app-only; fi
+            echo "IMAGE_REF=$IMAGE_REF"
+            echo "DEPLOY_MODE=$DEPLOY_MODE"
+
+            if [ -f "scripts/deploy.sh" ]; then
+              echo "=== Running deployment ==="
+              bash scripts/deploy.sh
+            else
+              echo "ERROR: scripts/deploy.sh not found"
+              ls -la scripts/ || echo "scripts/ directory not found"
+              exit 1
+            fi
+      - name: Post-deploy diagnostics (server)
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          passphrase: ${{ secrets.SSH_KEY_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT != '' && secrets.SSH_PORT || 22 }}
+          debug: true
+          script: |
+            set -euo pipefail
+            set -x
+            APP_PATH="${{ secrets.APP_PATH }}"
+            [ -z "$APP_PATH" ] && echo "APP_PATH empty" >&2 && exit 1
+            cd "$APP_PATH"
+            echo "=== docker ps ==="
+            docker ps --format '{{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}'
+            echo "=== .env snapshot (keys) ==="
+            [ -f .env ] && grep -E '^(APP_HOSTNAME|TRAEFIK_NETWORK|CLOUDFLARE_TUNNEL_TOKEN)=' .env || echo ".env missing"
+            FILE=""
+            if [ -f docker-compose.app.yml ]; then FILE=docker-compose.app.yml; fi
+            if [ -z "$FILE" ] && [ -f docker-compose.prod.yml ]; then FILE=docker-compose.prod.yml; fi
+            if [ -n "$FILE" ]; then
+              echo "=== docker compose -f $FILE ps ==="
+              docker compose -f "$FILE" ps || docker-compose -f "$FILE" ps || true
+              echo "=== docker compose -f $FILE logs --tail=200 ==="
+              docker compose -f "$FILE" logs --tail=200 || docker-compose -f "$FILE" logs --tail=200 || true
+            fi
+            # Traefik / Cloudflared logi (jeśli istnieją)
+            docker logs traefik --tail=200 || true
+            docker logs cloudflared --tail=200 || true
+            CID=$(docker ps --format '{{.ID}} {{.Image}}' | grep 'ghcr.io/${{ github.repository }}' | awk '{print $1}' | head -1) || true
+            if [ -n "$CID" ]; then
+              echo "=== Internal healthcheck in container $CID ==="
+              docker exec "$CID" sh -lc 'command -v curl >/dev/null 2>&1 && curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:3000/api/health || echo "curl not present"' || true
+            fi
       - name: Smoke test /api/health
         if: ${{ success() }}
         shell: bash
@@ -228,5 +348,7 @@ jobs:
             echo "Attempt $i/30: status=$code; retrying in 5s..."
             sleep 5
           done
+          echo "Final attempt with verbose output:"
+          curl -v "https://${HOST}/api/health" || true
           echo "Smoke test failed: /api/health did not return 200"
           exit 1

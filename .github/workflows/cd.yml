@@ -244,12 +244,25 @@ jobs:
 
             echo "=== Checking .env presence ==="
             if [ ! -f .env ]; then
-              echo "ERROR: Brak pliku .env w $APP_PATH — compose nie ma zmiennych (APP_HOSTNAME, itp.)." >&2
-              ls -la
-              exit 1
+              echo "No .env found — creating minimal one from secrets"
+              APP_HOSTNAME_VAL="${{ secrets.APP_HOSTNAME }}"
+              TRAEFIK_NETWORK_VAL="${{ secrets.TRAEFIK_NETWORK }}"
+              CF_TUNNEL_TOKEN_VAL="${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}"
+              if [ -z "$TRAEFIK_NETWORK_VAL" ]; then TRAEFIK_NETWORK_VAL="traefik-proxy"; fi
+              if [ -z "$APP_HOSTNAME_VAL" ]; then
+                echo "ERROR: APP_HOSTNAME secret is empty — cannot create routing rule for Traefik." >&2
+                exit 1
+              fi
+              {
+                echo "APP_HOSTNAME=$APP_HOSTNAME_VAL"
+                echo "TRAEFIK_NETWORK=$TRAEFIK_NETWORK_VAL"
+                if [ -n "$CF_TUNNEL_TOKEN_VAL" ]; then echo "CLOUDFLARE_TUNNEL_TOKEN=$CF_TUNNEL_TOKEN_VAL"; fi
+              } > .env
+              chmod 600 .env
+            else
+              echo "Found .env; kluczowe wartości:"
+              grep -E '^(APP_HOSTNAME|TRAEFIK_NETWORK|CLOUDFLARE_TUNNEL_TOKEN)=' .env || true
             fi
-            echo "Found .env; kluczowe wartości:"
-            grep -E '^(APP_HOSTNAME|TRAEFIK_NETWORK|CLOUDFLARE_TUNNEL_TOKEN)=' .env || true
 
             echo "=== Git operations ==="
             if [ -e .git ]; then

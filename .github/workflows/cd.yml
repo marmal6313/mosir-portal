@@ -217,7 +217,7 @@ jobs:
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
-          key_path: id_gha
+          key: ${{ secrets.SSH_KEY }}
           passphrase: ${{ secrets.SSH_KEY_PASSPHRASE }}
           port: ${{ secrets.SSH_PORT != '' && secrets.SSH_PORT || 22 }}
           debug: true
@@ -227,44 +227,52 @@ jobs:
             set -x
             export GIT_TRACE=1
             export GIT_CURL_VERBOSE=1
-            APP_PATH=${{ secrets.APP_PATH }}
-            case "$APP_PATH" in
-              "") echo "ERROR: APP_PATH secret is empty" >&2; exit 1;;
-              *) :;;
-            esac
+
+            APP_PATH="${{ secrets.APP_PATH }}"
+            if [ -z "$APP_PATH" ]; then
+              echo "ERROR: APP_PATH secret is empty" >&2
+              exit 1
+            fi
+
             mkdir -p "$APP_PATH"
             cd "$APP_PATH"
-            # Diagnostyka środowiska (opakowane, aby nie powodować niezerowych kodów)
-            command -v docker || true
-            bash -lc 'docker --version >/dev/null 2>&1 || true'
-            bash -lc 'docker compose version >/dev/null 2>&1 || docker-compose --version >/dev/null 2>&1 || true'
-            # Inicjalizacja / aktualizacja repo bez poleceń, które mogą zwrócić 1 w warunku
-            shopt -s nullglob
-            set -- .git
-            case "$#" in
-              1)
-                echo "Git repository exists, updating..."
-                git fetch --depth=1 origin main || true
-                git reset --hard FETCH_HEAD || true
-                ;;
-              0)
-                echo "No git repository, initializing..."
-                git init
-                git remote add origin https://github.com/${{ github.repository }}.git
-                git fetch --depth=1 origin main || true
-                git checkout -f FETCH_HEAD || true
-                ;;
-            esac
+
+            echo "=== Environment check ==="
+            command -v docker || echo "Docker not found"
+            docker --version || echo "Docker not working"
+            docker compose version || docker-compose --version || echo "Docker Compose not available"
+
+            echo "=== Git operations ==="
+            if [ -e .git ]; then
+              echo "Git repository exists, updating..."
+              git fetch --depth=1 origin main || true
+              git reset --hard FETCH_HEAD || true
+            else
+              echo "No git repository, initializing..."
+              git init
+              git remote add origin https://github.com/${{ github.repository }}.git
+              git fetch --depth=1 origin main || true
+              git checkout -f FETCH_HEAD || true
+            fi
+
             git rev-parse HEAD || true
             git log -1 --oneline || true
-            # Konfiguruj IMAGE_REF i odpal deployer
+
+            echo "=== Configuration ==="
             export IMAGE_REF="${{ steps.ref.outputs.IMAGE_REF }}"
-            # Wymuś wariant app-only, chyba że nadpisany sekretem DEPLOY_MODE
             export DEPLOY_MODE="${{ secrets.DEPLOY_MODE }}"
-            case "$DEPLOY_MODE" in "") DEPLOY_MODE=app-only;; esac
+            if [ -z "$DEPLOY_MODE" ]; then DEPLOY_MODE=app-only; fi
             echo "IMAGE_REF=$IMAGE_REF"
             echo "DEPLOY_MODE=$DEPLOY_MODE"
-            bash scripts/deploy.sh
+
+            if [ -f "scripts/deploy.sh" ]; then
+              echo "=== Running deployment ==="
+              bash scripts/deploy.sh
+            else
+              echo "ERROR: scripts/deploy.sh not found"
+              ls -la scripts/ || echo "scripts/ directory not found"
+              exit 1
+            fi
       - name: Smoke test /api/health
         if: ${{ success() }}
         shell: bash

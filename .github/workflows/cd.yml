@@ -108,12 +108,21 @@ jobs:
       - name: Verify Tailscale connectivity
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail  # intentionally omit -e so non-zero ping doesn't abort
           echo "Self status:"
           tailscale status --self || true
+
           if [ -n "${{ secrets.SSH_HOST }}" ]; then
             echo "Pinging ${{ secrets.SSH_HOST }} via Tailscale..."
-            tailscale ping -c 3 "${{ secrets.SSH_HOST }}"
+            PING_OUTPUT=$(tailscale ping -c 3 "${{ secrets.SSH_HOST }}" 2>&1) || true
+            if echo "$PING_OUTPUT" | grep -q "pong from"; then
+              echo "✅ Tailscale connection verified"
+              echo "$PING_OUTPUT"
+            else
+              echo "❌ Tailscale connection failed"
+              echo "$PING_OUTPUT"
+              exit 1
+            fi
           else
             echo "SSH_HOST secret is empty; skipping tailscale ping" >&2
           fi

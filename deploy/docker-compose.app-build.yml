@@ -28,7 +28,10 @@ services:
       retries: 3
       start_period: 40s
     networks:
-      - proxy
+      proxy:
+        aliases:
+          - app
+          - mosir-portal-app
     labels:
       - traefik.enable=true
       - traefik.docker.network=${TRAEFIK_NETWORK:-traefik-proxy}

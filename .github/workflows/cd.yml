@@ -242,6 +242,15 @@ jobs:
             docker --version || echo "Docker not working"
             docker compose version || docker-compose --version || echo "Docker Compose not available"
 
+            echo "=== Checking .env presence ==="
+            if [ ! -f .env ]; then
+              echo "ERROR: Brak pliku .env w $APP_PATH — compose nie ma zmiennych (APP_HOSTNAME, itp.)." >&2
+              ls -la
+              exit 1
+            fi
+            echo "Found .env; kluczowe wartości:"
+            grep -E '^(APP_HOSTNAME|TRAEFIK_NETWORK|CLOUDFLARE_TUNNEL_TOKEN)=' .env || true
+
             echo "=== Git operations ==="
             if [ -e .git ]; then
               echo "Git repository exists, updating..."
@@ -290,6 +299,8 @@ jobs:
             cd "$APP_PATH"
             echo "=== docker ps ==="
             docker ps --format '{{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}'
+            echo "=== .env snapshot (keys) ==="
+            [ -f .env ] && grep -E '^(APP_HOSTNAME|TRAEFIK_NETWORK|CLOUDFLARE_TUNNEL_TOKEN)=' .env || echo ".env missing"
             FILE=""
             if [ -f docker-compose.app.yml ]; then FILE=docker-compose.app.yml; fi
             if [ -z "$FILE" ] && [ -f docker-compose.prod.yml ]; then FILE=docker-compose.prod.yml; fi
@@ -299,6 +310,9 @@ jobs:
               echo "=== docker compose -f $FILE logs --tail=200 ==="
               docker compose -f "$FILE" logs --tail=200 || docker-compose -f "$FILE" logs --tail=200 || true
             fi
+            # Traefik / Cloudflared logi (jeśli istnieją)
+            docker logs traefik --tail=200 || true
+            docker logs cloudflared --tail=200 || true
             CID=$(docker ps --format '{{.ID}} {{.Image}}' | grep 'ghcr.io/${{ github.repository }}' | awk '{print $1}' | head -1) || true
             if [ -n "$CID" ]; then
               echo "=== Internal healthcheck in container $CID ==="

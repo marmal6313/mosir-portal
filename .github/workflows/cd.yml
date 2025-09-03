@@ -242,25 +242,18 @@ jobs:
             docker --version || echo "Docker not working"
             docker compose version || docker-compose --version || echo "Docker Compose not available"
 
-            echo "=== Checking .env presence ==="
-            env_missing=0; [ -f .env ] && env_missing=0 || env_missing=1
-            [ "$env_missing" -eq 1 ] && {
-              echo "No .env found — creating minimal one from secrets"
-              APP_HOSTNAME_VAL="${{ secrets.APP_HOSTNAME }}"
-              TRAEFIK_NETWORK_VAL="${{ secrets.TRAEFIK_NETWORK }}"
-              CF_TUNNEL_TOKEN_VAL="${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}"
-              TRAEFIK_NETWORK_VAL="${TRAEFIK_NETWORK_VAL:-traefik-proxy}"
-              : "${APP_HOSTNAME_VAL:?ERROR: APP_HOSTNAME secret is empty — cannot create routing rule for Traefik.}"
-              {
-                echo "APP_HOSTNAME=$APP_HOSTNAME_VAL"
-                echo "TRAEFIK_NETWORK=$TRAEFIK_NETWORK_VAL"
-                [ -n "$CF_TUNNEL_TOKEN_VAL" ] && echo "CLOUDFLARE_TUNNEL_TOKEN=$CF_TUNNEL_TOKEN_VAL" || true
-              } > .env
-              chmod 600 .env
-            } || {
-              echo "Found .env; kluczowe wartości:"
-              grep -E '^(APP_HOSTNAME|TRAEFIK_NETWORK|CLOUDFLARE_TUNNEL_TOKEN)=' .env || true
-            }
+            echo "=== Ensuring .env (append-only, idempotent) ==="
+            # Zawsze zapewnij istnienie pliku, bez testów
+            touch .env
+            # Ustal wartości z sekretów, z bezpiecznymi domyślnymi
+            APP_HOSTNAME_VAL="${{ secrets.APP_HOSTNAME }}"
+            TRAEFIK_NETWORK_VAL="${{ secrets.TRAEFIK_NETWORK }}"; TRAEFIK_NETWORK_VAL="${TRAEFIK_NETWORK_VAL:-traefik-proxy}"
+            CF_TUNNEL_TOKEN_VAL="${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}"
+            # Dopisz wartości (ostatnie wystąpienie wygrywa przy wczytywaniu env)
+            printf '%s\n' "APP_HOSTNAME=$APP_HOSTNAME_VAL" >> .env
+            printf '%s\n' "TRAEFIK_NETWORK=$TRAEFIK_NETWORK_VAL" >> .env
+            printf '%s\n' "${CF_TUNNEL_TOKEN_VAL:+CLOUDFLARE_TUNNEL_TOKEN=$CF_TUNNEL_TOKEN_VAL}" >> .env
+            chmod 600 .env || true
 
             echo "=== Git operations ==="
             if [ -e .git ]; then

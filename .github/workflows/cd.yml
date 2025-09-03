@@ -105,6 +105,17 @@ jobs:
       - name: Prepare IMAGE_REF
         id: ref
         run: echo "IMAGE_REF=ghcr.io/${{ github.repository }}:${{ needs.build-and-push.outputs.tag }}" >> $GITHUB_OUTPUT
+      - name: Debug inputs summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "== Debug: Inputs summary (masked) =="
+          echo "Has SSH_HOST: $([ -n "${{ secrets.SSH_HOST }}" ] && echo yes || echo no)"
+          echo "Has SSH_USER: $([ -n "${{ secrets.SSH_USER }}" ] && echo yes || echo no)"
+          echo "Has SSH_KEY:  $([ -n "${{ secrets.SSH_KEY }}" ] && echo yes || echo no)"
+          echo "Has PASSPHRASE: $([ -n "${{ secrets.SSH_KEY_PASSPHRASE }}" ] && echo yes || echo no)"
+          echo "SSH_PORT set: $([ -n "${{ secrets.SSH_PORT }}" ] && echo yes || echo no)"
+          echo "APP_PATH set: $([ -n "${{ secrets.APP_PATH }}" ] && echo yes || echo no)"
       - name: Verify Tailscale connectivity
         shell: bash
         run: |
@@ -185,10 +196,10 @@ jobs:
         uses: appleboy/ssh-action@v1.1.0
         with:
           host: ${{ secrets.SSH_HOST }}
-          username: ${{ env.SSH_USER || 'deploy' }}
+          username: ${{ secrets.SSH_USER }}
           key_path: id_gha
           passphrase: ${{ secrets.SSH_KEY_PASSPHRASE }}
-          port: ${{ env.SSH_PORT || 22 }}
+          port: ${{ secrets.SSH_PORT != '' && secrets.SSH_PORT || 22 }}
           debug: true
           script_stop: true
           script: |

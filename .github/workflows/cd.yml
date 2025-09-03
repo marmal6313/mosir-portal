@@ -273,6 +273,37 @@ jobs:
               ls -la scripts/ || echo "scripts/ directory not found"
               exit 1
             fi
+      - name: Post-deploy diagnostics (server)
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          passphrase: ${{ secrets.SSH_KEY_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT != '' && secrets.SSH_PORT || 22 }}
+          debug: true
+          script: |
+            set -euo pipefail
+            set -x
+            APP_PATH="${{ secrets.APP_PATH }}"
+            [ -z "$APP_PATH" ] && echo "APP_PATH empty" >&2 && exit 1
+            cd "$APP_PATH"
+            echo "=== docker ps ==="
+            docker ps --format '{{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}'
+            FILE=""
+            if [ -f docker-compose.app.yml ]; then FILE=docker-compose.app.yml; fi
+            if [ -z "$FILE" ] && [ -f docker-compose.prod.yml ]; then FILE=docker-compose.prod.yml; fi
+            if [ -n "$FILE" ]; then
+              echo "=== docker compose -f $FILE ps ==="
+              docker compose -f "$FILE" ps || docker-compose -f "$FILE" ps || true
+              echo "=== docker compose -f $FILE logs --tail=200 ==="
+              docker compose -f "$FILE" logs --tail=200 || docker-compose -f "$FILE" logs --tail=200 || true
+            fi
+            CID=$(docker ps --format '{{.ID}} {{.Image}}' | grep 'ghcr.io/${{ github.repository }}' | awk '{print $1}' | head -1) || true
+            if [ -n "$CID" ]; then
+              echo "=== Internal healthcheck in container $CID ==="
+              docker exec "$CID" sh -lc 'command -v curl >/dev/null 2>&1 && curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:3000/api/health || echo "curl not present"' || true
+            fi
       - name: Smoke test /api/health
         if: ${{ success() }}
         shell: bash
@@ -290,5 +321,7 @@ jobs:
             echo "Attempt $i/30: status=$code; retrying in 5s..."
             sleep 5
           done
+          echo "Final attempt with verbose output:"
+          curl -v "https://${HOST}/api/health" || true
           echo "Smoke test failed: /api/health did not return 200"
           exit 1

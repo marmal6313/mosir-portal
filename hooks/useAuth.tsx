@@ -110,7 +110,18 @@ export function useAuth(): AuthContextType {
       
       if (sessionError) {
         console.error('❌ useAuth: Błąd sesji:', sessionError)
-        setAuthError(sessionError.message)
+
+        // Lokalne wylogowanie gdy trzymamy nieaktualny refresh token
+        if (sessionError.message.toLowerCase().includes('refresh token')) {
+          await supabase.auth.signOut({ scope: 'local' })
+          profileCache.clear()
+          setAuthError('Sesja wygasła – zaloguj się ponownie')
+        } else {
+          setAuthError(sessionError.message)
+        }
+
+        setUser(null)
+        setProfile(null)
         setLoading(false)
         return
       }

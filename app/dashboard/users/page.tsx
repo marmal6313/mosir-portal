@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
+import { usePermissions } from '@/hooks/usePermissions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,14 +22,17 @@ import {
   Phone,
   Mail,
   MessageCircle,
-  Building
+  Building,
+  Plus
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 type User = Database['public']['Views']['users_with_details']['Row']
 
 export default function UsersPage() {
   const router = useRouter()
+  const { hasPermission, isSuperAdmin } = usePermissions()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -39,6 +43,31 @@ export default function UsersPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [showUserModal, setShowUserModal] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editForm, setEditForm] = useState({
+    first_name: '',
+    last_name: '',
+    position: '',
+    role: 'pracownik',
+    department_id: '' as string | number,
+    phone: '',
+    whatsapp: '',
+    active: true,
+  })
+  const [adding, setAdding] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
+  const [deps, setDeps] = useState<Array<{ id: number; name: string }>>([])
+  const [form, setForm] = useState({
+    email: '',
+    first_name: '',
+    last_name: '',
+    position: '',
+    role: 'pracownik',
+    department_id: '' as string | number,
+    phone: '',
+    whatsapp: '',
+    invite: true,
+  })
 
   const loadUsers = useCallback(async () => {
     try {
@@ -122,6 +151,9 @@ export default function UsersPage() {
       
       // Załaduj listę użytkowników
       await loadUsers()
+      // Załaduj departamenty do formularza
+      const { data: dpts } = await supabase.from('departments').select('id,name').order('name')
+      if (dpts) setDeps(dpts as any)
     } catch (error) {
       console.error('❌ Błąd autoryzacji:', error)
       router.push('/login')
@@ -155,6 +187,9 @@ export default function UsersPage() {
   // Unikalne role i departamenty do filtrowania
   const uniqueRoles = [...new Set(users.map(u => u.role).filter(Boolean))]
   const uniqueDepartments = [...new Set(users.map(u => u.department_name).filter(Boolean))]
+
+  const canCreateUser = isSuperAdmin() || hasPermission('users.create')
+  const canManage = !!userProfile && ['superadmin','dyrektor','kierownik'].includes(userProfile.role as string)
 
   const getRoleBadgeVariant = (role: string | null) => {
     switch (role) {
@@ -227,6 +262,17 @@ export default function UsersPage() {
                 <RefreshCw className="h-4 w-4" />
                 <span>Odśwież</span>
               </Button>
+              {canCreateUser && (
+                <Button
+                  onClick={() => setAddOpen(true)}
+                  variant="default"
+                  size="sm"
+                  className="flex items-center space-x-2"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Dodaj użytkownika</span>
+                </Button>
+              )}
             </div>
           </div>
           
@@ -270,6 +316,129 @@ export default function UsersPage() {
             </div>
           </div>
         </div>
+
+        {/* Modal dodawania użytkownika - renderowany tylko dla uprawnionych */}
+        {canCreateUser && (
+        <Dialog open={addOpen} onOpenChange={setAddOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Dodaj użytkownika</DialogTitle>
+              <DialogDescription>Utwórz konto (wyślemy zaproszenie e-mail jeśli włączone)</DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Email</label>
+                <Input value={form.email} onChange={e=>setForm({...form, email:e.target.value})} placeholder="user@example.com" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Imię</label>
+                <Input value={form.first_name} onChange={e=>setForm({...form, first_name:e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Nazwisko</label>
+                <Input value={form.last_name} onChange={e=>setForm({...form, last_name:e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Stanowisko</label>
+                <Input value={form.position} onChange={e=>setForm({...form, position:e.target.value})} placeholder="np. Specjalista" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Rola</label>
+                <select
+                  value={form.role}
+                  onChange={(e)=>setForm({...form, role:e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={userProfile?.role==='kierownik'}
+                >
+                  {['superadmin','dyrektor','kierownik','pracownik'].map(r=> (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Departament</label>
+                <select
+                  value={String(form.department_id ?? '')}
+                  onChange={(e)=>setForm({...form, department_id: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={userProfile?.role==='kierownik'}
+                >
+                  <option value="">— wybierz —</option>
+                  {deps.map(d=> (
+                    <option key={d.id} value={String(d.id)}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Telefon</label>
+                <Input value={form.phone} onChange={e=>setForm({...form, phone:e.target.value})} placeholder="+48 ..." />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">WhatsApp</label>
+                <Input value={form.whatsapp} onChange={e=>setForm({...form, whatsapp:e.target.value})} placeholder="+48 ..." />
+              </div>
+              <div className="flex items-center space-x-2 pt-2 md:col-span-2">
+                <input id="invite" type="checkbox" checked={form.invite} onChange={e=>setForm({...form, invite:e.target.checked})} />
+                <label htmlFor="invite" className="text-sm">Wyślij zaproszenie e-mail (jeśli SMTP skonfigurowane)</label>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setAddOpen(false)}
+              >
+                Anuluj
+              </Button>
+              <Button
+                disabled={adding}
+                onClick={async ()=>{
+                  if (!canCreateUser) {
+                    setMessage({ type:'error', text: 'Nie masz uprawnień do tworzenia użytkowników' })
+                    return
+                  }
+                  try {
+                    setAdding(true)
+                    const payload:any = {
+                      ...form,
+                      department_id: form.department_id ? Number(form.department_id) : undefined,
+                    }
+                    if (userProfile?.role==='kierownik') {
+                      payload.role = 'pracownik'
+                      // @ts-ignore
+                      if (userProfile?.department_id) payload.department_id = Number(userProfile.department_id)
+                    }
+                    const { data: { session } } = await supabase.auth.getSession()
+                    if (!session?.access_token) {
+                      throw new Error('Brak aktywnej sesji użytkownika')
+                    }
+
+                    const res = await fetch('/api/users/create', {
+                      method:'POST',
+                      headers:{
+                        'Content-Type':'application/json',
+                        Authorization: `Bearer ${session.access_token}`,
+                      },
+                      body: JSON.stringify(payload)
+                    })
+                    const data = await res.json()
+                    if (!res.ok) throw new Error(data?.details || data?.error || 'Błąd tworzenia użytkownika')
+                    setMessage({ type:'success', text: 'Użytkownik dodany' })
+                    setForm({ email:'', first_name:'', last_name:'', position:'', role:'pracownik', department_id:'', phone:'', whatsapp:'', invite:true })
+                    setAddOpen(false)
+                    await loadUsers()
+                  } catch (e:any) {
+                    setMessage({ type:'error', text: e?.message || 'Nie udało się dodać użytkownika' })
+                  } finally {
+                    setAdding(false)
+                  }
+                }}
+              >
+                {adding ? 'Dodawanie...' : 'Zapisz'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        )}
 
         {/* Wiadomości */}
         {message && (
@@ -481,6 +650,20 @@ export default function UsersPage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
+                                  onClick={() => {
+                                    setSelectedUser(user)
+                                    setEditForm({
+                                      first_name: user.first_name || '',
+                                      last_name: user.last_name || '',
+                                      position: user.position || '',
+                                      role: (user.role as string) || 'pracownik',
+                                      department_id: user.department_id ?? '',
+                                      phone: user.phone || '',
+                                      whatsapp: user.whatsapp || '',
+                                      active: !!user.active,
+                                    })
+                                    setEditOpen(true)
+                                  }}
                                   className="p-2 text-blue-600 hover:text-blue-700"
                                 >
                                   <Edit className="h-4 w-4" />
@@ -488,6 +671,30 @@ export default function UsersPage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
+                                  onClick={async () => {
+                                    if (!confirm('Na pewno dezaktywować użytkownika?')) return
+                                    const { data: { session } } = await supabase.auth.getSession()
+                                    if (!session?.access_token) {
+                                      setMessage({ type: 'error', text: 'Brak aktywnej sesji użytkownika' })
+                                      return
+                                    }
+
+                                    const res = await fetch('/api/users/delete', {
+                                      method: 'POST',
+                                      headers: {
+                                        'Content-Type': 'application/json',
+                                        Authorization: `Bearer ${session.access_token}`,
+                                      },
+                                      body: JSON.stringify({ id: user.id, mode: 'deactivate' })
+                                    })
+                                    if (res.ok) {
+                                      setMessage({ type: 'success', text: 'Użytkownik dezaktywowany' })
+                                      await loadUsers()
+                                    } else {
+                                      const j = await res.json().catch(()=>({}))
+                                      setMessage({ type: 'error', text: 'Błąd dezaktywacji: ' + (j?.details || res.status) })
+                                    }
+                                  }}
                                   className="p-2 text-red-600 hover:text-red-700"
                                 >
                                   <Trash2 className="h-4 w-4" />
@@ -589,6 +796,112 @@ export default function UsersPage() {
                   </Badge>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal edycji użytkownika */}
+      {editOpen && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Edytuj użytkownika</h3>
+              <button onClick={()=>setEditOpen(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Imię</label>
+                <Input value={editForm.first_name} onChange={e=>setEditForm({...editForm, first_name:e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Nazwisko</label>
+                <Input value={editForm.last_name} onChange={e=>setEditForm({...editForm, last_name:e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Stanowisko</label>
+                <Input value={editForm.position} onChange={e=>setEditForm({...editForm, position:e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Rola</label>
+                <select
+                  value={editForm.role}
+                  onChange={(e)=>setEditForm({...editForm, role:e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {['superadmin','dyrektor','kierownik','pracownik'].map(r=> (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Departament</label>
+                <select
+                  value={String(editForm.department_id ?? '')}
+                  onChange={(e)=>setEditForm({...editForm, department_id: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">— wybierz —</option>
+                  {deps.map(d=> (
+                    <option key={d.id} value={String(d.id)}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Telefon</label>
+                <Input value={editForm.phone} onChange={e=>setEditForm({...editForm, phone:e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">WhatsApp</label>
+                <Input value={editForm.whatsapp} onChange={e=>setEditForm({...editForm, whatsapp:e.target.value})} />
+              </div>
+              <div className="flex items-center space-x-2 mt-2">
+                <input id="active" type="checkbox" checked={editForm.active} onChange={e=>setEditForm({...editForm, active: e.target.checked})} />
+                <label htmlFor="active" className="text-sm">Aktywny</label>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end space-x-3">
+              <Button variant="outline" onClick={()=>setEditOpen(false)}>Anuluj</Button>
+              <Button
+                onClick={async ()=>{
+                  if (!selectedUser) return
+                  const payload:any = {
+                    id: selectedUser.id,
+                    first_name: editForm.first_name,
+                    last_name: editForm.last_name,
+                    position: editForm.position,
+                    role: editForm.role,
+                    department_id: editForm.department_id === '' ? null : Number(editForm.department_id),
+                    phone: editForm.phone || null,
+                    whatsapp: editForm.whatsapp || null,
+                    active: editForm.active,
+                  }
+                  const { data: { session } } = await supabase.auth.getSession()
+                  if (!session?.access_token) {
+                    setMessage({ type: 'error', text: 'Brak aktywnej sesji użytkownika' })
+                    return
+                  }
+
+                  const res = await fetch('/api/users/update', {
+                    method:'PATCH',
+                    headers:{
+                      'Content-Type':'application/json',
+                      Authorization: `Bearer ${session.access_token}`,
+                    },
+                    body: JSON.stringify(payload)
+                  })
+                  if (res.ok) {
+                    setMessage({ type: 'success', text: 'Zaktualizowano użytkownika' })
+                    setEditOpen(false)
+                    await loadUsers()
+                  } else {
+                    const j = await res.json().catch(()=>({}))
+                    setMessage({ type: 'error', text: 'Błąd aktualizacji: ' + (j?.details || res.status) })
+                  }
+                }}
+              >Zapisz zmiany</Button>
             </div>
           </div>
         </div>

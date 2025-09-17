@@ -1,10 +1,25 @@
 import { cookies } from 'next/headers'
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClient } from '@supabase/supabase-js'
+import type { NextRequest } from 'next/server'
 import { Database } from '@/types/database'
 
-export function createSupabaseServerClient() {
+export function createSupabaseServerClient(req?: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+  const authHeader = req?.headers.get('authorization')
+  if (authHeader) {
+    return createClient<Database>(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false },
+      global: {
+        headers: {
+          Authorization: authHeader,
+        },
+      },
+    })
+  }
+
   return createServerComponentClient<Database>({
     cookies: () => cookies()
   }, {

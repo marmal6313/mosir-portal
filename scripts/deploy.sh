@@ -45,6 +45,7 @@ export IMAGE_TAG="${IMAGE_TAG:-}"           # opcjonalnie nadpisz tag w locie
 export IMAGE_REF="${IMAGE_REF:-}"           # lub pełny ref (ghcr.io/org/repo:tag)
 export PROXY_NETWORK="${PROXY_NETWORK:-traefik-proxy}" # zewnętrzna sieć współdzielona z innymi usługami (np. n8n)
 export DEPLOY_MODE="${DEPLOY_MODE:-prod}"   # prod | app-only
+export N8N_ENABLED="${N8N_ENABLED:-auto}"   # auto | true | false
 
 if [ -n "${IMAGE_TAG:-}" ] && [ -z "${IMAGE_REF:-}" ]; then
   # jeżeli podano tylko IMAGE_TAG, spróbuj zbudować IMAGE_REF na bazie obecnego
@@ -88,6 +89,29 @@ else
   echo "==> Starting/Updating stack"
   dc -f docker-compose.prod.yml up -d
   dc -f docker-compose.prod.yml ps || true
+
+  # Uruchom cloudflared w trybie prod, jeśli dostępny token (tunel jako ingress zamiast publicznych portów lub dodatkowo)
+  if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
+    echo "==> Ensuring external network '$PROXY_NETWORK' exists for cloudflared"
+    docker network inspect "$PROXY_NETWORK" >/dev/null 2>&1 || docker network create "$PROXY_NETWORK"
+    echo "==> Starting/Updating cloudflared tunnel"
+    dc -f cloudflared.yml --env-file ./.env up -d
+    dc -f cloudflared.yml ps || true
+  fi
+fi
+
+if [ -f docker-compose.n8n.yml ]; then
+  if [ "$N8N_ENABLED" = "true" ] || { [ "$N8N_ENABLED" = "auto" ] && docker ps --format '{{.Names}}' | grep -q '^traefik$'; }; then
+    echo "==> Starting/Updating n8n (docker-compose.n8n.yml)"
+    # Ensure the proxy network exists before bringing up n8n
+    docker network inspect "$PROXY_NETWORK" >/dev/null 2>&1 || docker network create "$PROXY_NETWORK"
+    dc -f docker-compose.n8n.yml --env-file ./.env up -d
+    dc -f docker-compose.n8n.yml ps || true
+  else
+    echo "==> Skipping n8n (N8N_ENABLED=$N8N_ENABLED). To enable: export N8N_ENABLED=true"
+  fi
+else
+  echo "==> n8n compose not found (deploy/docker-compose.n8n.yml). Skipping."
 fi
 
 echo "==> Pruning old images (optional)"

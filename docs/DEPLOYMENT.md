@@ -63,49 +63,62 @@
 - Jednorazowo na serwerze: `docker network create traefik-proxy` (skrypt deploy tworzy ją automatycznie, jeśli brak).
 - Traefik i aplikacja łączą się do `traefik-proxy` (zdefiniowane w `deploy/docker-compose.prod.yml`).
 
-**Jeśli masz już Traefika (np. z n8n)**
-- Użyj stacku „app‑only”: `deploy/docker-compose.app.yml` (nie uruchamia własnego Traefika).
-- Ustaw, do jakiej sieci dołączyć: `export TRAEFIK_NETWORK=n8n-compose_default` (lub nazwa Twojej sieci).
-- Domyślnie router działa po HTTP na entrypoincie `web` (kompatybilne z Cloudflare SSL mode: Flexible).
-- Uruchom:
-  - `cd /opt/mosir-portal/deploy`
-  - `docker compose -f docker-compose.app.yml --env-file ./.env up -d`
-- Jeśli chcesz przejść na Full (strict): skonfiguruj certyfikat po stronie Traefika (ACME DNS‑01/Origin Cert) i dodaj etykietę TLS.
+**Reverse proxy (Traefik)**
+- Domyślnie uruchamiamy własny Traefik z `deploy/docker-compose.prod.yml` (TLS przez Let’s Encrypt DNS‑01 + Cloudflare).
+- Inne usługi (np. n8n) dołącz do sieci `traefik-proxy` i skonfiguruj etykiety Traefika (patrz sekcja n8n niżej).
+- Wariant „app‑only” (z Twoim Traefikiem) jest opcjonalny/zaawansowany i nie jest rekomendowany jako default.
 
 **Pierwsze wdrożenie bez GHCR (lokalny build)**
-- Gdy obraz nie jest jeszcze opublikowany w GHCR, użyj: `deploy/docker-compose.app-build.yml`.
-- Kroki:
-  - `export TRAEFIK_NETWORK=nazwasieci_traefika` (np. `n8n-compose_default`)
-  - `cd /opt/mosir-portal/deploy`
-  - `docker compose -f docker-compose.app-build.yml --env-file ./.env up -d --build`
-- Po opublikowaniu obrazu w GHCR przejdź na `docker-compose.app.yml` lub na pełny stack z naszym Traefikiem.
+- Gdy obraz nie jest jeszcze opublikowany w GHCR, użyj: `deploy/docker-compose.app-build.yml` (uruchamia tylko app na porcie 3000 lokalnie/stagingowo).
+- Docelowo w produkcji używaj pełnego stacka: `deploy/docker-compose.prod.yml`.
 
 **Cloudflare SSL/TLS tryb**
-- Szybki start: ustaw „SSL/TLS → Flexible” (Cloudflare łączy się z origin po HTTP). Nasze etykiety Traefika obsługują `web` bez redirectu.
-- Docelowo: „Full (strict)” (Cloudflare → HTTPS do origin). Wtedy skonfiguruj w Traefiku ważny cert dla `app.e-mosir.pl` (np. ACME DNS‑01) i dodaj etykietę `traefik.http.routers.mosir.tls=true` oraz `...tls.certresolver=<nazwa>`.
-- Upewnij się, że rekord DNS `app` wskazuje na publiczny IP serwera (A/AAAA, Proxied). Unikaj CNAME do Cloudflare Tunnel, jeśli nie używasz cloudflared.
+- Rekomendowane: „Full (strict)” (Cloudflare → HTTPS do Traefika). Traefik wystawia ważny cert (ACME DNS‑01, Cloudflare API token).
+- Upewnij się, że rekord DNS `app` wskazuje na publiczny IP serwera (A/AAAA, Proxied).
 
-**Podpięcie n8n za Traefikiem (przykład)**
-- W compose n8n usuń mapowania portów 80/443; dołącz do sieci: `networks: [traefik-proxy]`.
-- Ustaw etykiety:
-  - `traefik.enable=true`
-  - `traefik.http.routers.n8n.rule=Host(`n8n.e-mosir.pl`)`
-  - `traefik.http.routers.n8n.entrypoints=websecure`
-  - `traefik.http.routers.n8n.tls=true`
-  - `traefik.http.routers.n8n.tls.certresolver=letsencrypt`
-  - `traefik.http.services.n8n.loadbalancer.server.port=5678`
-- Zmienne n8n (za proxy): `N8N_HOST=n8n.e-mosir.pl`, `N8N_PROTOCOL=https`, `WEBHOOK_URL=https://n8n.e-mosir.pl/`.
+**Podpięcie n8n za Traefikiem (produkcyjnie)**
+- Skorzystaj z gotowego pliku: `deploy/docker-compose.n8n.yml` i przykładowego env: `deploy/.env.example`.
+- Kroki:
+  1) Na serwerze uzupełnij `/opt/mosir-portal/deploy/.env` na bazie `deploy/.env.example`:
+     - `N8N_HOSTNAME=n8n.e-mosir.pl`, `N8N_PROTOCOL=https`, `WEBHOOK_URL=https://n8n.e-mosir.pl/`
+     - `TRAEFIK_NETWORK=traefik-proxy` (albo Twoja istniejąca sieć Traefika)
+     - (opcjonalnie) `N8N_BASIC_AUTH_USER/PASSWORD`
+     - (dane n8n) Jeśli chcesz podpiąć istniejące workflowy:
+       - Ustaw `N8N_DATA_EXTERNAL=true` i `N8N_DATA_VOLUME=<stary_wolumen>` (np. `n8n-compose_n8n_data`), lub
+       - Ustaw `N8N_DATA_BIND=/ścieżka/do/.n8n` (bind mount — nadpisuje volume)
+       - Jeśli używałeś szyfrowania: `N8N_ENCRYPTION_KEY=<ten_sam_klucz>`
+  2) Upewnij się, że sieć istnieje: `docker network create traefik-proxy` (jeśli brak).
+  3) Uruchom deploy: `bash scripts/deploy.sh` (albo przez workflow CD).
+- Plik `docker-compose.n8n.yml`:
+  - Nie wystawia portów — ruch przechodzi przez Traefik.
+  - Ma etykiety Traefika z TLS (ACME DNS‑01):
+    - `traefik.http.routers.n8n.rule=Host(`${N8N_HOSTNAME}`)`
+    - `...entrypoints=websecure`, `...tls=true`, `...tls.certresolver=letsencrypt`
+    - `...services.n8n.loadbalancer.server.port=5678`
+   - Dane n8n:
+     - Domyślnie używa wolumenu `n8n_data` (lokalny)
+     - Możesz wskazać istniejący zewnętrzny wolumen: `N8N_DATA_EXTERNAL=true`, `N8N_DATA_VOLUME=<nazwa>`
+     - Możesz użyć bind mount: `N8N_DATA_BIND=/abs/ścieżka/.n8n`
+- Zmienne n8n (za proxy): `N8N_HOSTNAME`, `N8N_PROTOCOL`, `WEBHOOK_URL`.
+- Szybki test: `curl -I https://n8n.e-mosir.pl` -> 200/301 oraz sprawdź `docker logs traefik`.
 
-**Cloudflare Tunnel (dynamiczny IP — rekomendowane)**
+**Cloudflare Tunnel (dynamiczny IP — opcjonalnie)**
 - Gdy rekord `app` jest CNAME → `<UUID>.cfargotunnel.com`, uruchom tunel na serwerze.
 - Kroki:
   - Cloudflare Zero Trust → Access → Tunnels → utwórz Named Tunnel i dodaj Public Hostname:
     - `app.e-mosir.pl` → `http://mosir-portal-app:3000`
   - W `deploy/.env` ustaw `CLOUDFLARE_TUNNEL_TOKEN=<token z CF>`.
-  - Dołącz cloudflared do tej samej sieci co aplikacja: `export TRAEFIK_NETWORK=n8n-compose_default`.
+  - Dołącz cloudflared do tej samej sieci co aplikacja: `export TRAEFIK_NETWORK=traefik-proxy`.
   - Uruchom: `docker compose -f deploy/cloudflared.yml --env-file deploy/.env up -d`.
   - Test: `curl -I https://app.e-mosir.pl/api/health` → 200.
 - Uwaga: w tym wariancie Cloudflare łączy się do origin po HTTP w sieci Dockera; Traefik może być nadal używany dla innych usług.
+
+-**Migracja z istniejącego n8n compose**
+- Jeśli masz już `n8n` uruchomione w `/home/dell2/n8n-compose` z własnym Traefikiem:
+  - Zatrzymaj stary Traefik (konflikt portów 80/443) i przejdź na wspólny Traefik z tego repo (`docker-compose.prod.yml`).
+- Jeśli chcesz podpiąć istniejący kontener n8n pod nasz Traefik tymczasowo (hotfix):
+  - `docker network connect traefik-proxy <n8n_container>`
+  - Pamiętaj: bez etykiet Traefika na kontenerze n8n nie zadziała — najlepiej przejść na `deploy/docker-compose.n8n.yml`.
 
 **SSH i dostęp administracyjny (Tailscale — rekomendowane)**
 - Przy zmiennym publicznym IP korzystaj z Tailscale do SSH (stabilny adres 100.x lub nazwa MagicDNS).

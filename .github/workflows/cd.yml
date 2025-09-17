@@ -242,6 +242,9 @@ jobs:
             docker --version || echo "Docker not working"
             docker compose version || docker-compose --version || echo "Docker Compose not available"
 
+            echo "=== Configure git safe.directory ==="
+            git config --global --add safe.directory "$APP_PATH" || true
+
             echo "=== Ensuring .env (append-only, idempotent) ==="
             # Zawsze zapewnij istnienie pliku, bez testów
             touch .env
@@ -249,10 +252,18 @@ jobs:
             APP_HOSTNAME_VAL="${{ secrets.APP_HOSTNAME }}"
             TRAEFIK_NETWORK_VAL="${{ secrets.TRAEFIK_NETWORK }}"; TRAEFIK_NETWORK_VAL="${TRAEFIK_NETWORK_VAL:-traefik-proxy}"
             CF_TUNNEL_TOKEN_VAL="${{ secrets.CLOUDFLARE_TUNNEL_TOKEN }}"
+            LETSENCRYPT_EMAIL_VAL="${{ secrets.LETSENCRYPT_EMAIL }}"
+            CLOUDFLARE_API_TOKEN_VAL="${{ secrets.CLOUDFLARE_API_TOKEN }}"
+            N8N_HOSTNAME_VAL="${{ secrets.N8N_HOSTNAME }}"
+            N8N_ENABLED_VAL="${{ secrets.N8N_ENABLED }}"
             # Dopisz wartości (ostatnie wystąpienie wygrywa przy wczytywaniu env)
             printf '%s\n' "APP_HOSTNAME=$APP_HOSTNAME_VAL" >> .env
             printf '%s\n' "TRAEFIK_NETWORK=$TRAEFIK_NETWORK_VAL" >> .env
             printf '%s\n' "${CF_TUNNEL_TOKEN_VAL:+CLOUDFLARE_TUNNEL_TOKEN=$CF_TUNNEL_TOKEN_VAL}" >> .env
+            printf '%s\n' "${LETSENCRYPT_EMAIL_VAL:+LETSENCRYPT_EMAIL=$LETSENCRYPT_EMAIL_VAL}" >> .env
+            printf '%s\n' "${CLOUDFLARE_API_TOKEN_VAL:+CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN_VAL}" >> .env
+            printf '%s\n' "${N8N_HOSTNAME_VAL:+N8N_HOSTNAME=$N8N_HOSTNAME_VAL}" >> .env
+            printf '%s\n' "${N8N_ENABLED_VAL:+N8N_ENABLED=$N8N_ENABLED_VAL}" >> .env
             chmod 600 .env || true
 
             echo "=== Git operations ==="
@@ -274,7 +285,7 @@ jobs:
             echo "=== Configuration ==="
             export IMAGE_REF="${{ steps.ref.outputs.IMAGE_REF }}"
             export DEPLOY_MODE="${{ secrets.DEPLOY_MODE }}"
-            if [ -z "$DEPLOY_MODE" ]; then DEPLOY_MODE=app-only; fi
+            if [ -z "$DEPLOY_MODE" ]; then DEPLOY_MODE=prod; fi
             echo "IMAGE_REF=$IMAGE_REF"
             echo "DEPLOY_MODE=$DEPLOY_MODE"
 
@@ -306,8 +317,9 @@ jobs:
             echo "=== .env snapshot (keys) ==="
             [ -f .env ] && grep -E '^(APP_HOSTNAME|TRAEFIK_NETWORK|CLOUDFLARE_TUNNEL_TOKEN)=' .env || echo ".env missing"
             FILE=""
-            if [ -f docker-compose.app.yml ]; then FILE=docker-compose.app.yml; fi
-            if [ -z "$FILE" ] && [ -f docker-compose.prod.yml ]; then FILE=docker-compose.prod.yml; fi
+            # Preferuj pełny stack z Traefikiem
+            if [ -f docker-compose.prod.yml ]; then FILE=docker-compose.prod.yml; fi
+            if [ -z "$FILE" ] && [ -f docker-compose.app.yml ]; then FILE=docker-compose.app.yml; fi
             if [ -n "$FILE" ]; then
               echo "=== docker compose -f $FILE ps ==="
               docker compose -f "$FILE" ps || docker-compose -f "$FILE" ps || true
@@ -342,4 +354,42 @@ jobs:
           echo "Final attempt with verbose output:"
           curl -v "https://${HOST}/api/health" || true
           echo "Smoke test failed: /api/health did not return 200"
+          exit 1
+
+      - name: Post-deploy diagnostics (cloudflared logs)
+        uses: appleboy/ssh-action@v1.1.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          passphrase: ${{ secrets.SSH_KEY_PASSPHRASE }}
+          port: ${{ secrets.SSH_PORT != '' && secrets.SSH_PORT || 22 }}
+          debug: true
+          script: |
+            set -euo pipefail
+            docker logs cloudflared --tail=200 || true
+
+      - name: Smoke test n8n (optional)
+        if: ${{ success() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST="${{ secrets.N8N_HOSTNAME }}"
+          if [ -z "${HOST}" ]; then
+            echo "N8N_HOSTNAME secret is empty; skipping n8n smoke test";
+            exit 0
+          fi
+          echo "Checking https://${HOST}"
+          for i in {1..30}; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "https://${HOST}" || true)
+            if [ "${code:-0}" -ge 200 ] && [ "${code:-0}" -lt 400 ]; then
+              echo "n8n OK (${code})"
+              exit 0
+            fi
+            echo "Attempt $i/30: status=$code; retrying in 5s..."
+            sleep 5
+          done
+          echo "Final attempt with verbose output:"
+          curl -v "https://${HOST}" || true
+          echo "Smoke test failed: n8n did not return 2xx/3xx"
           exit 1

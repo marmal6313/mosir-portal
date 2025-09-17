@@ -4,9 +4,8 @@
 - Actions → “Build and Push Docker Image” → Run workflow → `tag: staging`.
 - Repo → Packages → `mosir-portal` → Change visibility → Public (na start).
 
-2) Przełączenie serwera na pull-based
-- `export TRAEFIK_NETWORK=n8n-compose_default`
-- `cd /opt/mosir-portal && docker compose -f deploy/docker-compose.app.yml --env-file deploy/.env up -d`
+2) Przełączenie serwera na pull-based (Traefik + app)
+- `cd /opt/mosir-portal && bash scripts/deploy.sh`
 - `curl -I https://app.e-mosir.pl/api/health` → 200.
 
 3) CD na tagu release-YYYYMMDD
@@ -16,4 +15,3 @@
 4) Uptime + logi
 - Dodaj zewnętrzny check (np. BetterStack) do `https://app.e-mosir.pl/api/health`.
 - Rotacja logów i szybkie `docker logs mosir-portal-app` w runbooku.
-

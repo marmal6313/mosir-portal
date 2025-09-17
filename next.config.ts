@@ -25,7 +25,9 @@ function buildCsp() {
   const connectHosts = [
     "'self'",
     supabaseHost ? `https://${supabaseHost}` : undefined,
+    supabaseHost ? `wss://${supabaseHost}` : undefined,
     "https://*.supabase.co",
+    "wss://*.supabase.co",
   ].filter(Boolean)
 
   const imgSrc = ["'self'", "data:", "blob:", ...imgSrcHosts]

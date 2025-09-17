@@ -1,0 +1,56 @@
+version: "3.9"
+
+networks:
+  traefik-proxy:
+    external: true
+
+volumes:
+  n8n_data:
+    # Configure via env:
+    # - N8N_DATA_EXTERNAL=true to use an existing external volume
+    # - N8N_DATA_VOLUME=name of the external volume (e.g. n8n-compose_n8n_data)
+    # Defaults create a local named volume
+    external: ${N8N_DATA_EXTERNAL:-false}
+    name: ${N8N_DATA_VOLUME:-n8n_data}
+
+services:
+  n8n:
+    image: n8nio/n8n:1.64.0
+    container_name: n8n
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      # Host/protocol used by n8n when generating webhook/callback URLs behind a proxy
+      - N8N_HOST=${N8N_HOSTNAME:-n8n.e-mosir.pl}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-https}
+      - WEBHOOK_URL=${WEBHOOK_URL:-https://n8n.e-mosir.pl/}
+      - N8N_PORT=5678
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-Europe/Warsaw}
+      # Uncomment to enable basic auth to the editor UI
+      # - N8N_BASIC_AUTH_ACTIVE=true
+      # - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      # - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+    # Persist workflows and config (optional but recommended)
+    volumes:
+      # Use a bind mount path by setting N8N_DATA_BIND="/path/to/.n8n"
+      # or default to the named volume alias "n8n_data"
+      - ${N8N_DATA_BIND:-n8n_data}:/home/node/.n8n
+    # Do NOT publish ports; Traefik will proxy to the internal port
+    networks:
+      traefik-proxy:
+        aliases:
+          - n8n-compose-n8n-1
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik-proxy}
+      - traefik.http.routers.n8n.rule=Host(`${N8N_HOSTNAME:-n8n.e-mosir.pl}`)
+      - traefik.http.routers.n8n.entrypoints=websecure
+      - traefik.http.routers.n8n.tls=true
+      - traefik.http.routers.n8n.tls.certresolver=letsencrypt
+      - traefik.http.services.n8n.loadbalancer.server.port=5678
+      # HTTP -> HTTPS redirect for Flexible/HTTP requests
+      - traefik.http.routers.n8n-web.rule=Host(`${N8N_HOSTNAME:-n8n.e-mosir.pl}`)
+      - traefik.http.routers.n8n-web.entrypoints=web
+      - traefik.http.routers.n8n-web.middlewares=n8n-https-redirect
+      - traefik.http.middlewares.n8n-https-redirect.redirectscheme.scheme=https

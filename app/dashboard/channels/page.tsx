@@ -638,7 +638,11 @@ export default function ChannelsPage() {
 
       if (error || !data) {
         console.error('Nie udało się wysłać wiadomości', error)
-        setMessageError('Nie udało się wysłać wiadomości. Spróbuj ponownie.')
+        const errorCode = (error as { code?: string })?.code
+        const friendly = errorCode === '42501'
+          ? 'Nie masz jeszcze dostępu do tego kanału. Skontaktuj się z administratorem, aby dołączyć.'
+          : error?.message || 'Spróbuj ponownie.'
+        setMessageError('Nie udało się wysłać wiadomości: ' + friendly)
         return
       }
 

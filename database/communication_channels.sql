@@ -62,6 +62,9 @@ CREATE TABLE IF NOT EXISTS channel_message_mentions (
 CREATE INDEX IF NOT EXISTS idx_channel_message_mentions_user
     ON channel_message_mentions(user_id);
 
+ALTER TABLE IF EXISTS notifications
+    ADD COLUMN IF NOT EXISTS action_url TEXT;
+
 CREATE OR REPLACE FUNCTION bump_channel_last_message()
 RETURNS TRIGGER AS $$
 BEGIN

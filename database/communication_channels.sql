@@ -122,11 +122,21 @@ BEGIN
         RETURN FALSE;
     END IF;
 
-    RETURN EXISTS (
+    IF EXISTS (
         SELECT 1
           FROM channel_departments cd
          WHERE cd.channel_id = p_channel
            AND cd.department_id = v_department_id
+    ) THEN
+        RETURN TRUE;
+    END IF;
+
+    RETURN EXISTS (
+        SELECT 1
+          FROM channel_message_mentions cmm
+          JOIN channel_messages cm ON cm.id = cmm.message_id
+         WHERE cm.channel_id = p_channel
+           AND cmm.user_id = v_user
     );
 END;
 $$;
@@ -280,13 +290,14 @@ BEGIN
             INSERT INTO channel_message_mentions (message_id, user_id)
             SELECT v_message.id, uid FROM UNNEST(v_unique_mentions) AS uid;
 
-            INSERT INTO notifications (user_id, title, message, type)
+            INSERT INTO notifications (user_id, title, message, type, action_url)
             SELECT
               uid,
               'Nowa wzmianka w kanale',
               COALESCE(v_channel_name, 'Kanał') || ': wspomnienie od ' ||
                 TRIM(COALESCE(v_sender_first, '') || ' ' || COALESCE(v_sender_last, '')),
-              'info'
+              'info',
+              '/dashboard/channels/' || p_channel_id
             FROM UNNEST(v_unique_mentions) AS uid;
         END IF;
     END IF;

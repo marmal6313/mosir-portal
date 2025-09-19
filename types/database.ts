@@ -247,6 +247,7 @@ export type Database = {
           title: string
           type: string
           user_id: string | null
+          action_url: string | null
         }
         Insert: {
           created_at?: string | null
@@ -259,6 +260,7 @@ export type Database = {
           title: string
           type: string
           user_id?: string | null
+          action_url?: string | null
         }
         Update: {
           created_at?: string | null
@@ -271,6 +273,7 @@ export type Database = {
           title?: string
           type?: string
           user_id?: string | null
+          action_url?: string | null
         }
         Relationships: [
           {

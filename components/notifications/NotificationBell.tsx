@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Bell, X, CheckCircle, AlertCircle, Info, XCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -17,9 +18,11 @@ interface Notification {
   task_id?: string | null
   sent_email?: boolean | null
   sent_whatsapp?: boolean | null
+  action_url?: string | null
 }
 
 export function NotificationBell() {
+  const router = useRouter()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
@@ -219,7 +222,12 @@ export function NotificationBell() {
                   }`}
                   onClick={() => {
                     if (!notification.read) {
-                      markAsRead(notification.id)
+                      void markAsRead(notification.id)
+                    }
+                    if (notification.action_url) {
+                      setIsOpen(false)
+                      router.push(notification.action_url)
+                      return
                     }
                     if (notification.task_id) {
                       window.open(`/dashboard/tasks/${notification.task_id}`, '_blank')
@@ -271,4 +279,3 @@ export function NotificationBell() {
     </div>
   )
 }
-

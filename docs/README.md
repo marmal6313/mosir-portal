@@ -122,6 +122,9 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 ```
 
+### Dodatkowe przewodniki
+- [Konfiguracja zmiany hasła i własnego SMTP](./password-email-setup.md)
+
 ### Baza danych
 ```sql
 -- Tabela zadań

@@ -44,6 +44,9 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
   const [showUserModal, setShowUserModal] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [userToDelete, setUserToDelete] = useState<User | null>(null)
+  const [deleteActionLoading, setDeleteActionLoading] = useState<'deactivate' | 'hard' | null>(null)
   const [editForm, setEditForm] = useState({
     first_name: '',
     last_name: '',
@@ -190,6 +193,60 @@ export default function UsersPage() {
 
   const canCreateUser = isSuperAdmin() || hasPermission('users.create')
   const canManage = !!userProfile && ['superadmin','dyrektor','kierownik'].includes(userProfile.role as string)
+
+  const handleUserRemoval = useCallback(async (mode: 'deactivate' | 'hard') => {
+    if (!userToDelete?.id) {
+      setMessage({ type: 'error', text: 'Nieprawidłowe ID użytkownika' })
+      return
+    }
+
+    if (mode === 'hard' && userProfile?.role !== 'superadmin') {
+      setMessage({ type: 'error', text: 'Brak uprawnień do permanentnego usunięcia użytkownika' })
+      return
+    }
+
+    if (mode === 'hard') {
+      const hardConfirm = confirm(`To działanie usunie użytkownika ${userToDelete.full_name || userToDelete.email || userToDelete.id} bez możliwości przywrócenia. Kontynuować?`)
+      if (!hardConfirm) return
+    }
+
+    try {
+      setDeleteActionLoading(mode)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setMessage({ type: 'error', text: 'Brak aktywnej sesji użytkownika' })
+        return
+      }
+
+      const res = await fetch('/api/users/delete', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ id: userToDelete.id, mode })
+      })
+
+      if (res.ok) {
+        setMessage({
+          type: 'success',
+          text: mode === 'deactivate' ? 'Użytkownik dezaktywowany' : 'Użytkownik usunięty permanentnie'
+        })
+        setDeleteDialogOpen(false)
+        setUserToDelete(null)
+        await loadUsers()
+      } else {
+        const payload = await res.json().catch(() => ({}))
+        const errorText = payload?.details || payload?.error || `Błąd ${res.status}`
+        setMessage({ type: 'error', text: `Błąd usuwania: ${errorText}` })
+      }
+    } catch (error) {
+      console.error('❌ Błąd usuwania użytkownika:', error)
+      setMessage({ type: 'error', text: 'Wystąpił błąd podczas usuwania użytkownika' })
+    } finally {
+      setDeleteActionLoading(null)
+    }
+  }, [userToDelete, userProfile?.role, loadUsers])
 
   const getRoleBadgeVariant = (role: string | null) => {
     switch (role) {
@@ -671,29 +728,9 @@ export default function UsersPage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={async () => {
-                                    if (!confirm('Na pewno dezaktywować użytkownika?')) return
-                                    const { data: { session } } = await supabase.auth.getSession()
-                                    if (!session?.access_token) {
-                                      setMessage({ type: 'error', text: 'Brak aktywnej sesji użytkownika' })
-                                      return
-                                    }
-
-                                    const res = await fetch('/api/users/delete', {
-                                      method: 'POST',
-                                      headers: {
-                                        'Content-Type': 'application/json',
-                                        Authorization: `Bearer ${session.access_token}`,
-                                      },
-                                      body: JSON.stringify({ id: user.id, mode: 'deactivate' })
-                                    })
-                                    if (res.ok) {
-                                      setMessage({ type: 'success', text: 'Użytkownik dezaktywowany' })
-                                      await loadUsers()
-                                    } else {
-                                      const j = await res.json().catch(()=>({}))
-                                      setMessage({ type: 'error', text: 'Błąd dezaktywacji: ' + (j?.details || res.status) })
-                                    }
+                                  onClick={() => {
+                                    setUserToDelete(user)
+                                    setDeleteDialogOpen(true)
                                   }}
                                   className="p-2 text-red-600 hover:text-red-700"
                                 >
@@ -712,6 +749,58 @@ export default function UsersPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Modal usuwania użytkownika */}
+      <Dialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          setDeleteDialogOpen(open)
+          if (!open) {
+            setUserToDelete(null)
+            setDeleteActionLoading(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Usuń użytkownika</DialogTitle>
+            <DialogDescription>
+              Wybierz sposób usunięcia konta. Dezaktywacja zablokuje dostęp, a permanentne usunięcie wyczyści dane użytkownika.
+            </DialogDescription>
+          </DialogHeader>
+          {userToDelete && (
+            <div className="rounded-md border border-gray-200 bg-gray-50 p-3 space-y-1">
+              <p className="font-medium text-gray-900">{userToDelete.full_name || userToDelete.email || 'Nieznany użytkownik'}</p>
+              <p className="text-sm text-gray-600 break-all">{userToDelete.email}</p>
+              <p className="text-xs text-gray-500">ID: {userToDelete.id}</p>
+            </div>
+          )}
+          <div className="flex items-start space-x-3 rounded-md bg-orange-50 border border-orange-200 p-3 text-sm text-orange-800">
+            <AlertTriangle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+            <p>
+              Dezaktywacja zachowa historię i pozwoli przywrócić konto w przyszłości. Permanentne usunięcie usunie profil z bazy danych oraz Supabase Auth – operacji nie można cofnąć.
+            </p>
+          </div>
+          <DialogFooter className="flex flex-col space-y-3">
+            <Button
+              variant="outline"
+              disabled={deleteActionLoading !== null}
+              onClick={() => handleUserRemoval('deactivate')}
+            >
+              {deleteActionLoading === 'deactivate' ? 'Dezaktywowanie...' : 'Dezaktywuj użytkownika'}
+            </Button>
+            {userProfile?.role === 'superadmin' && (
+              <Button
+                variant="destructive"
+                disabled={deleteActionLoading !== null}
+                onClick={() => handleUserRemoval('hard')}
+              >
+                {deleteActionLoading === 'hard' ? 'Usuwanie...' : 'Usuń permanentnie'}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal szczegółów użytkownika */}
       {showUserModal && selectedUser && (

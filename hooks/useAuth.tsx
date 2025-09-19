@@ -100,6 +100,16 @@ export function useAuth(): AuthContextType {
     }
 
     if (DEBUG) console.log('🔍 useAuth: Rozpoczynam inicjalizację autoryzacji...')
+
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.error('❌ useAuth: Brak konfiguracji Supabase (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY)')
+      setAuthError('Brak konfiguracji Supabase. Uzupełnij zmienne środowiskowe i zrestartuj aplikację.')
+      setUser(null)
+      setProfile(null)
+      setLoading(false)
+      return
+    }
+
     initializingRef.current = true
     
     try {

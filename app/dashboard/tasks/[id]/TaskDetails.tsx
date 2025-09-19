@@ -1,5 +1,5 @@
 "use client"
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
 import { Button } from '@/components/ui/button'
@@ -20,17 +20,17 @@ import {
   Circle, 
   AlertTriangle,
   History,
-  Plus,
-  Trash2,
   Eye,
-  EyeOff
+  EyeOff,
+  MessageCircle,
+  Send
 } from 'lucide-react'
 import Link from 'next/link'
 
 type TaskChange = {
   id: string
   task_id: string
-  user_id: string
+  user_id: string | null
   changed_at: string
   old_description: string | null
   new_description: string | null
@@ -39,7 +39,27 @@ type TaskChange = {
   old_due_date: string | null
   new_due_date: string | null
   user_name?: string
+  users?: {
+    first_name: string | null
+    last_name: string | null
+  } | null
 }
+
+type TaskComment = {
+  id: string
+  task_id: string | null
+  user_id: string | null
+  comment: string
+  created_at: string | null
+  users?: {
+    first_name: string | null
+    last_name: string | null
+  } | null
+}
+
+type TimelineEntry =
+  | { type: 'change'; id: string; timestamp: string; userName: string; change: TaskChange }
+  | { type: 'comment'; id: string; timestamp: string; userName: string; comment: TaskComment }
 
 type UserOption = {
   id: string
@@ -68,9 +88,12 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
   const [error, setError] = useState("")
   const [changes, setChanges] = useState<TaskChange[]>([])
   const [loadingChanges, setLoadingChanges] = useState(true)
+  const [comments, setComments] = useState<TaskComment[]>([])
+  const [loadingComments, setLoadingComments] = useState(true)
+  const [newComment, setNewComment] = useState('')
+  const [postingComment, setPostingComment] = useState(false)
   const [showDescription, setShowDescription] = useState(true)
   const [users, setUsers] = useState<UserOption[]>([])
-  const [loadingUsers, setLoadingUsers] = useState(true)
 
   // Pobierz listę użytkowników
   useEffect(() => {
@@ -91,49 +114,84 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
         }
       } catch (error) {
         console.error('Błąd pobierania użytkowników:', error)
-      } finally {
-        setLoadingUsers(false)
       }
     }
 
     fetchUsers()
   }, [])
 
-  // Pobierz historię zmian
-  useEffect(() => {
-    const fetchChanges = async () => {
-      try {
-        const { data: changesData, error } = await supabase
-          .from('task_changes')
-          .select(`
-            *,
-            users:user_id(first_name, last_name)
-          `)
-          .eq('task_id', task.id)
-          .order('changed_at', { ascending: false })
-
-        if (error) {
-          console.error('Błąd pobierania historii:', error)
-        } else {
-          const changesWithUserNames = changesData?.map(change => ({
-            ...change,
-            user_name: change.users ? `${change.users.first_name} ${change.users.last_name}` : 'Nieznany użytkownik'
-          })) || []
-          setChanges(changesWithUserNames)
-        }
-      } catch (error) {
-        console.error('Błąd pobierania historii:', error)
-      } finally {
+  const fetchChanges = useCallback(async () => {
+    try {
+      setLoadingChanges(true)
+      if (!task.id) {
+        setChanges([])
         setLoadingChanges(false)
+        return
       }
-    }
+      const { data: changesData, error } = await supabase
+        .from('task_changes')
+        .select(`
+          *,
+          users:user_id(first_name, last_name)
+        `)
+        .eq('task_id', task.id)
+        .order('changed_at', { ascending: false })
 
-    fetchChanges()
+      if (error) {
+        console.error('Błąd pobierania historii:', error)
+        return
+      }
+
+      const changesWithUserNames = changesData?.map(change => ({
+        ...change,
+        user_name: change.users ? `${change.users.first_name ?? ''} ${change.users.last_name ?? ''}`.trim() || 'Nieznany użytkownik' : 'Nieznany użytkownik'
+      })) || []
+      setChanges(changesWithUserNames)
+    } catch (error) {
+      console.error('Błąd pobierania historii:', error)
+    } finally {
+      setLoadingChanges(false)
+    }
   }, [task.id])
 
-  if (!task.id) {
-    return <div>Błąd: Brak ID zadania.</div>;
-  }
+  const fetchComments = useCallback(async () => {
+    try {
+      setLoadingComments(true)
+      if (!task.id) {
+        setComments([])
+        setLoadingComments(false)
+        return
+      }
+      const { data: commentsData, error } = await supabase
+        .from('task_comments')
+        .select(`
+          id,
+          comment,
+          created_at,
+          task_id,
+          user_id,
+          users:user_id(first_name, last_name)
+        `)
+        .eq('task_id', task.id)
+        .order('created_at', { ascending: true })
+
+      if (error) {
+        console.error('Błąd pobierania komentarzy:', error)
+        return
+      }
+
+      setComments((commentsData as TaskComment[]) || [])
+    } catch (error) {
+      console.error('Błąd pobierania komentarzy:', error)
+    } finally {
+      setLoadingComments(false)
+    }
+  }, [task.id])
+
+  useEffect(() => {
+    fetchChanges()
+    fetchComments()
+  }, [fetchChanges, fetchComments])
 
   const startEditing = (field: string) => {
     setEditingField(field)
@@ -221,22 +279,7 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
       setEditingField(null)
       
       // Odśwież historię zmian
-      const { data: changesData } = await supabase
-        .from('task_changes')
-        .select(`
-          *,
-          users:user_id(first_name, last_name)
-        `)
-        .eq('task_id', task.id)
-        .order('changed_at', { ascending: false })
-
-      if (changesData) {
-        const changesWithUserNames = changesData.map(change => ({
-          ...change,
-          user_name: change.users ? `${change.users.first_name} ${change.users.last_name}` : 'Nieznany użytkownik'
-        }))
-        setChanges(changesWithUserNames)
-      }
+      await fetchChanges()
 
     } catch (error) {
       setError("Wystąpił błąd podczas aktualizacji")
@@ -244,6 +287,58 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
     }
 
     setLoading(false)
+  }
+
+  const handleAddComment = async () => {
+    const trimmed = newComment.trim()
+    if (!trimmed) return
+
+    setPostingComment(true)
+    setError("")
+    setSuccess("")
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) {
+        setError('Brak aktywnej sesji użytkownika')
+        return
+      }
+
+      const response = await fetch('/api/tasks/comments', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          taskId: task.id,
+          comment: trimmed,
+        })
+      })
+
+      const payload = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        const errorText = payload?.details || payload?.error || 'Nie udało się dodać komentarza'
+        setError(errorText)
+        return
+      }
+
+      const createdComment = payload?.comment as TaskComment | undefined
+      setNewComment('')
+      setSuccess('Komentarz dodany')
+
+      if (createdComment) {
+        setComments(prev => [...prev, createdComment])
+      } else {
+        await fetchComments()
+      }
+    } catch (error) {
+      console.error('Błąd dodawania komentarza:', error)
+      setError('Nie udało się dodać komentarza')
+    } finally {
+      setPostingComment(false)
+    }
   }
 
   const getStatusIcon = (status: string | null) => {
@@ -304,14 +399,75 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
     return new Date(dateString).toLocaleDateString('pl-PL')
   }
 
-  const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('pl-PL')
+  const formatDateTime = (dateString: string | null | undefined) => {
+    if (!dateString) return 'Brak daty'
+    const parsed = new Date(dateString)
+    if (Number.isNaN(parsed.getTime())) {
+      return 'Brak daty'
+    }
+    return parsed.toLocaleString('pl-PL')
   }
+
+  const getUserDisplayName = useCallback((userId: string | null, fallback?: { first_name: string | null; last_name: string | null } | null) => {
+    if (fallback) {
+      const fallbackName = `${fallback.first_name ?? ''} ${fallback.last_name ?? ''}`.trim()
+      if (fallbackName) {
+        return fallbackName
+      }
+    }
+
+    if (!userId) {
+      return 'Nieznany użytkownik'
+    }
+
+    const matched = users.find(u => u.id === userId)
+    if (matched) {
+      return matched.full_name
+    }
+
+    return 'Nieznany użytkownik'
+  }, [users])
+
+  const getInitials = (name: string) => {
+    const letters = name
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(part => part[0]?.toUpperCase() ?? '')
+      .join('')
+    return letters.slice(0, 2) || '?'
+  }
+
+  const timelineEntries = useMemo<TimelineEntry[]>(() => {
+    const changeEntries: TimelineEntry[] = changes.map(change => {
+      const userName = change.user_name && change.user_name.trim().length > 0
+        ? change.user_name
+        : getUserDisplayName(change.user_id, change.users ?? undefined)
+
+      return {
+        type: 'change' as const,
+        id: `change-${change.id}`,
+        timestamp: change.changed_at,
+        userName,
+        change
+      }
+    })
+
+    const commentEntries: TimelineEntry[] = comments.map(comment => ({
+      type: 'comment' as const,
+      id: `comment-${comment.id}`,
+      timestamp: comment.created_at ?? new Date().toISOString(),
+      userName: getUserDisplayName(comment.user_id, comment.users ?? undefined),
+      comment
+    }))
+
+    return [...changeEntries, ...commentEntries].sort((a, b) => {
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    })
+  }, [changes, comments, getUserDisplayName])
 
   const getAssignedUserName = (userId: string | null) => {
     if (!userId) return 'Brak'
-    const user = users.find(u => u.id === userId)
-    return user ? user.full_name : 'Nieznany użytkownik'
+    return getUserDisplayName(userId)
   }
 
   const renderEditableField = (field: string, label: string, currentValue: string | null, type: 'text' | 'select' | 'date' | 'textarea' = 'text') => {
@@ -431,6 +587,10 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
         </Button>
       </div>
     )
+  }
+
+  if (!task.id) {
+    return <div>Błąd: Brak ID zadania.</div>
   }
 
   return (
@@ -610,6 +770,84 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
           </div>
         )}
 
+        {/* Dyskusja zadania */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 mb-4">
+          <div className="p-4 sm:p-6 border-b border-gray-200 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-blue-600" />
+              <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Dyskusja</h3>
+              <Badge variant="outline" className="ml-2 text-xs">
+                {comments.length}
+              </Badge>
+            </div>
+          </div>
+          <div className="p-4 sm:p-6 space-y-4 max-h-[420px] overflow-y-auto">
+            {loadingComments ? (
+              <div className="text-center py-6">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-500">Ładowanie komentarzy...</p>
+              </div>
+            ) : comments.length === 0 ? (
+              <div className="text-center py-6 text-sm text-gray-500">
+                Brak komentarzy. Rozpocznij dyskusję, aby omówić postęp zadania.
+              </div>
+            ) : (
+              comments.map(comment => {
+                const authorName = getUserDisplayName(comment.user_id, comment.users ?? undefined)
+                const initials = getInitials(authorName)
+                return (
+                  <div key={comment.id} className="flex items-start gap-3">
+                    <div className="h-9 w-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-semibold">
+                      {initials}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-900">{authorName}</span>
+                        <span className="text-xs text-gray-500">{formatDateTime(comment.created_at)}</span>
+                      </div>
+                      <div className="mt-1 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-sm text-gray-800 whitespace-pre-line">
+                        {comment.comment}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+          <div className="border-t border-gray-200 p-4 sm:p-6 space-y-3">
+            <textarea
+              value={newComment}
+              onChange={(event) => setNewComment(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault()
+                  handleAddComment()
+                }
+              }}
+              rows={3}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+              placeholder="Dodaj komentarz lub zapytaj zespół..."
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">Ctrl + Enter aby wysłać</span>
+              <Button
+                onClick={handleAddComment}
+                disabled={postingComment || newComment.trim().length === 0}
+                className="flex items-center gap-2"
+              >
+                {postingComment ? (
+                  'Wysyłanie...'
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    Wyślij
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </div>
+
         {/* Historia zmian */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           <div className="p-4 sm:p-6 border-b border-gray-200">
@@ -617,18 +855,18 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
               <History className="h-5 w-5 text-gray-600" />
               <h3 className="text-lg sm:text-xl font-semibold text-gray-900">Historia zmian</h3>
               <Badge variant="secondary" className="ml-2">
-                {changes.length} zmian
+                {timelineEntries.length} aktywności
               </Badge>
             </div>
           </div>
           
           <div className="p-4 sm:p-6">
-            {loadingChanges ? (
+            {loadingChanges || loadingComments ? (
               <div className="text-center py-8">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
                 <p className="text-gray-500">Ładowanie historii...</p>
               </div>
-            ) : changes.length === 0 ? (
+            ) : timelineEntries.length === 0 ? (
               <div className="text-center py-8">
                 <History className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                 <h4 className="text-lg font-medium text-gray-900 mb-2">Brak historii zmian</h4>
@@ -636,72 +874,102 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
               </div>
             ) : (
               <div className="space-y-4">
-                {changes.map((change, index) => (
-                  <div key={change.id} className="relative">
-                    {/* Timeline connector */}
-                    {index < changes.length - 1 && (
-                      <div className="absolute left-6 top-8 w-0.5 h-8 bg-gray-200"></div>
-                    )}
-                    
-                    {/* Change dot */}
-                    <div className="absolute left-5 top-6 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow-sm"></div>
-                    
-                    {/* Change card */}
-                    <div className="ml-12 bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-gray-400" />
-                          <span className="text-sm font-medium text-gray-900">
-                            {change.user_name || 'Nieznany użytkownik'}
+                {timelineEntries.map((entry, index) => {
+                  const isAssignmentChange = entry.type === 'change'
+                    && (entry.change.old_description?.startsWith('Przypisanie:') || entry.change.new_description?.startsWith('Przypisanie:'))
+                    && entry.change.old_description !== entry.change.new_description
+                  const oldAssignment = entry.type === 'change'
+                    ? entry.change.old_description?.replace('Przypisanie: ', '')
+                    : null
+                  const newAssignment = entry.type === 'change'
+                    ? entry.change.new_description?.replace('Przypisanie: ', '')
+                    : null
+
+                  return (
+                    <div key={entry.id} className="relative">
+                      {index < timelineEntries.length - 1 && (
+                        <div className="absolute left-6 top-8 w-0.5 h-8 bg-gray-200"></div>
+                      )}
+
+                      <div className="absolute left-5 top-6 w-3 h-3 bg-blue-500 rounded-full border-2 border-white shadow-sm"></div>
+
+                      <div className="ml-12 bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            {entry.type === 'comment' ? (
+                              <MessageCircle className="h-4 w-4 text-blue-500" />
+                            ) : (
+                              <User className="h-4 w-4 text-gray-400" />
+                            )}
+                            <span className="text-sm font-medium text-gray-900">
+                              {entry.userName}
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-500">
+                            {formatDateTime(entry.timestamp)}
                           </span>
                         </div>
-                        <span className="text-xs text-gray-500">
-                          {formatDateTime(change.changed_at)}
-                        </span>
-                </div>
-                
-                <div className="space-y-2">
-                  {change.old_description !== change.new_description && (
-                      <div className="text-sm">
-                            <span className="font-medium text-gray-700">Opis:</span>
-                            <div className="mt-1 p-2 bg-gray-50 rounded text-xs">
-                              <div className="text-red-600 line-through">{change.old_description || 'Brak'}</div>
-                              <div className="text-green-600 font-medium">{change.new_description || 'Brak'}</div>
+
+                        {entry.type === 'comment' ? (
+                          <div className="rounded-lg bg-blue-50 border border-blue-100 px-3 py-2 text-sm text-gray-800 whitespace-pre-line">
+                            {entry.comment.comment}
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {isAssignmentChange && (
+                              <div className="text-sm">
+                                <span className="font-medium text-gray-700">Przypisanie:</span>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <span className="text-red-600 text-xs">{oldAssignment || 'Brak'}</span>
+                                  <span className="text-gray-400">→</span>
+                                  <span className="text-green-600 text-xs font-medium">{newAssignment || 'Brak'}</span>
+                                </div>
+                              </div>
+                            )}
+
+                            {!isAssignmentChange && entry.change.old_description !== entry.change.new_description && (
+                              <div className="text-sm">
+                                <span className="font-medium text-gray-700">Opis:</span>
+                                <div className="mt-1 p-2 bg-gray-50 rounded text-xs">
+                                  <div className="text-red-600 line-through">{entry.change.old_description || 'Brak'}</div>
+                                  <div className="text-green-600 font-medium">{entry.change.new_description || 'Brak'}</div>
+                                </div>
+                              </div>
+                            )}
+
+                            {entry.change.old_status !== entry.change.new_status && (
+                              <div className="text-sm">
+                                <span className="font-medium text-gray-700">Status:</span>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">
+                                    {entry.change.old_status || 'Brak'}
+                                  </Badge>
+                                  <span className="text-gray-400">→</span>
+                                  <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                                    {entry.change.new_status || 'Brak'}
+                                  </Badge>
+                                </div>
+                              </div>
+                            )}
+
+                            {entry.change.old_due_date !== entry.change.new_due_date && (
+                              <div className="text-sm">
+                                <span className="font-medium text-gray-700">Termin:</span>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <span className="text-red-600 text-xs">{entry.change.old_due_date ? formatDate(entry.change.old_due_date) : 'Brak'}</span>
+                                  <span className="text-gray-400">→</span>
+                                  <span className="text-green-600 text-xs font-medium">{entry.change.new_due_date ? formatDate(entry.change.new_due_date) : 'Brak'}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
-                  
-                  {change.old_status !== change.new_status && (
-                      <div className="text-sm">
-                            <span className="font-medium text-gray-700">Status:</span>
-                            <div className="mt-1 flex items-center gap-2">
-                              <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-200">
-                                {change.old_status || 'Brak'}
-                              </Badge>
-                              <span className="text-gray-400">→</span>
-                              <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
-                                {change.new_status || 'Brak'}
-                              </Badge>
-                      </div>
-                    </div>
-                  )}
-                  
-                  {change.old_due_date !== change.new_due_date && (
-                      <div className="text-sm">
-                            <span className="font-medium text-gray-700">Termin:</span>
-                            <div className="mt-1 flex items-center gap-2">
-                              <span className="text-red-600 text-xs">{change.old_due_date ? formatDate(change.old_due_date) : 'Brak'}</span>
-                              <span className="text-gray-400">→</span>
-                              <span className="text-green-600 text-xs font-medium">{change.new_due_date ? formatDate(change.new_due_date) : 'Brak'}</span>
-                      </div>
-                    </div>
-                  )}
-                      </div>
-                </div>
+                  )
+                })}
               </div>
-            ))}
-          </div>
-        )}
+            )}
           </div>
         </div>
       </div>

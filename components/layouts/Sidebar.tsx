@@ -9,6 +9,7 @@ import {
   LayoutDashboard, 
   CheckSquare, 
   FileText, 
+  MessageSquare,
   Users, 
   Settings, 
   LogOut,
@@ -37,6 +38,8 @@ export default function Sidebar({ profile }: SidebarProps) {
       setActiveItem('Dashboard')
     } else if (pathname.startsWith('/dashboard/tasks')) {
       setActiveItem('Zadania')
+    } else if (pathname.startsWith('/dashboard/channels')) {
+      setActiveItem('Kanały')
     } else if (pathname.startsWith('/dashboard/users')) {
       setActiveItem('Użytkownicy')
     } else if (pathname.startsWith('/dashboard/reports')) {
@@ -82,6 +85,7 @@ export default function Sidebar({ profile }: SidebarProps) {
   const navigation = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
     { name: 'Zadania', href: '/dashboard/tasks', icon: CheckSquare },
+    { name: 'Kanały', href: '/dashboard/channels', icon: MessageSquare },
     { name: 'Raporty', href: '/dashboard/reports', icon: FileText },
     { name: 'Wykres Gantta', href: '/dashboard/gantt', icon: FileText },
     ...(profile?.role === 'superadmin' || profile?.role === 'dyrektor' || profile?.role === 'kierownik'

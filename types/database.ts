@@ -14,6 +14,179 @@ export type Database = {
   }
   public: {
     Tables: {
+      channel_departments: {
+        Row: {
+          channel_id: string
+          department_id: number
+          added_at: string | null
+        }
+        Insert: {
+          channel_id: string
+          department_id: number
+          added_at?: string | null
+        }
+        Update: {
+          channel_id?: string
+          department_id?: number
+          added_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_departments_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "communication_channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_departments_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      channel_messages: {
+        Row: {
+          channel_id: string
+          content: string
+          created_at: string | null
+          id: string
+          metadata: Json | null
+          sender_id: string
+        }
+        Insert: {
+          channel_id: string
+          content: string
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          sender_id: string
+        }
+        Update: {
+          channel_id?: string
+          content?: string
+          created_at?: string | null
+          id?: string
+          metadata?: Json | null
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_messages_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "communication_channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "users_with_details"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      channel_message_mentions: {
+        Row: {
+          created_at: string | null
+          message_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          message_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          message_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_message_mentions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "channel_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_message_mentions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_message_mentions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_with_details"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      communication_channels: {
+        Row: {
+          created_at: string | null
+          created_by: string
+          description: string | null
+          id: string
+          is_archived: boolean
+          last_message_at: string | null
+          name: string
+          updated_at: string | null
+          visibility: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by: string
+          description?: string | null
+          id?: string
+          is_archived?: boolean
+          last_message_at?: string | null
+          name: string
+          updated_at?: string | null
+          visibility?: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string
+          description?: string | null
+          id?: string
+          is_archived?: boolean
+          last_message_at?: string | null
+          name?: string
+          updated_at?: string | null
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "communication_channels_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "communication_channels_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users_with_details"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       departments: {
         Row: {
           active: boolean | null
@@ -857,6 +1030,23 @@ export type Database = {
       }
       get_week_number: {
         Args: { date_input?: string }
+        Returns: string
+      }
+      create_channel_message: {
+        Args: {
+          p_channel_id: string
+          p_content: string
+          p_mentions?: string[] | null
+        }
+        Returns: Database['public']['Tables']['channel_messages']['Row']
+      }
+      create_channel: {
+        Args: {
+          p_name: string
+          p_description?: string | null
+          p_visibility?: string | null
+          p_departments?: number[] | null
+        }
         Returns: string
       }
     }

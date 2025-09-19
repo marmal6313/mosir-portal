@@ -950,8 +950,8 @@ export default function ChannelsPage() {
   }, [])
 
   return (
-    <div className="flex h-full flex-1 gap-6 px-4 py-6 lg:px-8">
-      <aside className="flex w-full max-w-xs flex-col rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-md shadow-xl">
+    <div className="flex h-full flex-1 flex-col gap-4 px-3 py-4 sm:gap-6 sm:px-4 sm:py-6 lg:flex-row lg:px-8">
+      <aside className="flex w-full flex-col lg:max-w-xs rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-md shadow-xl">
         <div className="flex items-center justify-between border-b border-gray-200 px-4 py-4">
           <div className="flex items-center gap-2">
             <div className="rounded-full bg-blue-100 p-2">
@@ -974,7 +974,7 @@ export default function ChannelsPage() {
           </div>
         )}
 
-        <div className="flex-1 overflow-y-auto px-2 pb-4 pt-2">
+        <div className="flex-1 overflow-y-auto px-1 pb-4 pt-2 sm:px-2">
           {loadingChannels ? (
             <div className="flex h-full items-center justify-center text-sm text-gray-500">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Ładowanie kanałów...

@@ -17,7 +17,9 @@ import {
   X,
   CheckCircle,
   AlertCircle,
-  Info
+  Info,
+  KeyRound,
+  Lock
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import type { Database } from '@/types/database'
@@ -34,6 +36,13 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
+  const [passwordMessage, setPasswordMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [passwordForm, setPasswordForm] = useState({
+    current: '',
+    next: '',
+    confirm: ''
+  })
   
   // Form state
   const [formData, setFormData] = useState({
@@ -199,6 +208,64 @@ export default function ProfilePage() {
       })
     }
     setIsEditing(false)
+  }
+
+  const resetPasswordForm = () => {
+    setPasswordForm({ current: '', next: '', confirm: '' })
+  }
+
+  const handlePasswordChange = async () => {
+    if (!user?.email) {
+      setPasswordMessage({ type: 'error', text: 'Brak adresu e-mail użytkownika. Spróbuj ponownie po odświeżeniu.' })
+      return
+    }
+
+    if (!passwordForm.current.trim() || !passwordForm.next.trim() || !passwordForm.confirm.trim()) {
+      setPasswordMessage({ type: 'error', text: 'Uzupełnij wszystkie pola formularza.' })
+      return
+    }
+
+    if (passwordForm.next !== passwordForm.confirm) {
+      setPasswordMessage({ type: 'error', text: 'Nowe hasło i potwierdzenie muszą być identyczne.' })
+      return
+    }
+
+    if (passwordForm.next.length < 8) {
+      setPasswordMessage({ type: 'error', text: 'Nowe hasło musi mieć co najmniej 8 znaków.' })
+      return
+    }
+
+    try {
+      setChangingPassword(true)
+      setPasswordMessage(null)
+
+      const reauth = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: passwordForm.current
+      })
+
+      if (reauth.error) {
+        setPasswordMessage({ type: 'error', text: 'Aktualne hasło jest nieprawidłowe.' })
+        return
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: passwordForm.next
+      })
+
+      if (updateError) {
+        setPasswordMessage({ type: 'error', text: updateError.message || 'Nie udało się zaktualizować hasła.' })
+        return
+      }
+
+      setPasswordMessage({ type: 'success', text: 'Hasło zostało pomyślnie zmienione.' })
+      resetPasswordForm()
+    } catch (error) {
+      console.error('Błąd zmiany hasła:', error)
+      setPasswordMessage({ type: 'error', text: 'Wystąpił nieoczekiwany błąd podczas zmiany hasła.' })
+    } finally {
+      setChangingPassword(false)
+    }
   }
 
   const getRoleDisplayName = (role: string) => {
@@ -413,7 +480,110 @@ export default function ProfilePage() {
               )}
             </CardContent>
           </Card>
-        </div>
+      </div>
+    </div>
+
+      <div className="mt-6 grid gap-6 md:grid-cols-2">
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Zmiana hasła</CardTitle>
+                <CardDescription>Zadbaj o bezpieczeństwo swojego konta ustawiając nowe hasło.</CardDescription>
+              </div>
+              <div className="hidden md:flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                <KeyRound className="h-5 w-5" />
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {passwordMessage && (
+                <div
+                  className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${passwordMessage.type === 'success'
+                    ? 'border-green-200 bg-green-50 text-green-700'
+                    : 'border-red-200 bg-red-50 text-red-700'
+                  }`}
+                >
+                  {passwordMessage.type === 'success' ? (
+                    <CheckCircle className="h-4 w-4" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4" />
+                  )}
+                  <span>{passwordMessage.text}</span>
+                </div>
+              )}
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="current-password">Aktualne hasło</Label>
+                  <Input
+                    id="current-password"
+                    type="password"
+                    value={passwordForm.current}
+                    onChange={(event) => setPasswordForm(prev => ({ ...prev, current: event.target.value }))}
+                    placeholder="Wprowadź aktualne hasło"
+                    autoComplete="current-password"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">Nowe hasło</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    value={passwordForm.next}
+                    onChange={(event) => setPasswordForm(prev => ({ ...prev, next: event.target.value }))}
+                    placeholder="Minimum 8 znaków"
+                    autoComplete="new-password"
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="confirm-password">Potwierdź nowe hasło</Label>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    value={passwordForm.confirm}
+                    onChange={(event) => setPasswordForm(prev => ({ ...prev, confirm: event.target.value }))}
+                    placeholder="Powtórz nowe hasło"
+                    autoComplete="new-password"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-2 text-xs text-gray-500">
+                  <Lock className="h-4 w-4" />
+                  <span>Hasło powinno zawierać co najmniej 8 znaków.</span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={resetPasswordForm}
+                    disabled={changingPassword}
+                  >
+                    Wyczyść
+                  </Button>
+                  <Button
+                    onClick={handlePasswordChange}
+                    disabled={changingPassword}
+                  >
+                    {changingPassword ? (
+                      <span className="flex items-center gap-2">
+                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                        Zmieniam hasło...
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-2">
+                        <KeyRound className="h-4 w-4" />
+                        Zmień hasło
+                      </span>
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

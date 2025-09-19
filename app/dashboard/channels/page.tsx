@@ -138,6 +138,7 @@ export default function ChannelsPage() {
   const [messageDraft, setMessageDraft] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const [mentionableUsers, setMentionableUsers] = useState<MentionableUser[]>([])
+  const mentionableCacheRef = useRef<Map<string, MentionableUser[]>>(new Map())
   const mentionTokensRef = useRef<Map<string, string>>(new Map())
   const [activeMentionUserIds, setActiveMentionUserIds] = useState<Set<string>>(() => new Set())
   const [mentionState, setMentionState] = useState<{ active: boolean; query: string; startIndex: number }>({
@@ -510,23 +511,67 @@ export default function ChannelsPage() {
   }, [user, loading, router, loadDepartments, loadChannels])
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !selectedChannel) {
+      setMentionableUsers([])
+      return
+    }
+
+    const cacheKey = selectedChannel.visibility === 'restricted'
+      ? `restricted-${selectedChannel.id}`
+      : 'public'
+
+    const cached = mentionableCacheRef.current.get(cacheKey)
+    if (cached) {
+      setMentionableUsers(cached)
+      syncMentionTokens(messageDraft)
+      return
+    }
 
     const loadMentionableUsers = async () => {
-      const { data, error } = await supabase
-        .from('users_with_details')
-        .select('id, first_name, last_name, role, department_id, department_name, full_name, active')
-        .order('full_name', { ascending: true })
+      try {
+        let users: MentionableUser[] = []
 
-      if (error) {
-        console.error('Nie udało się wczytać listy użytkowników do wzmiankowania', error)
-        return
-      }
+        if (selectedChannel.visibility === 'restricted') {
+          const departmentIds = (selectedChannel.channel_departments ?? [])
+            .map((dept) => dept.department_id)
+            .filter((id): id is number => typeof id === 'number')
 
-      if (data) {
-        const filtered = data
-          .filter((item) => item.id && item.id !== user.id && (item.active ?? true))
-          .map((item) => ({
+          if (departmentIds.length) {
+            const { data, error } = await supabase
+              .from('users_with_details')
+              .select('id, first_name, last_name, role, department_id, department_name, full_name, active')
+              .in('department_id', departmentIds)
+              .eq('active', true)
+              .neq('id', user.id)
+              .order('full_name', { ascending: true })
+
+            if (error) {
+              throw error
+            }
+
+            users = (data ?? []).map((item) => ({
+              id: item.id!,
+              first_name: item.first_name,
+              last_name: item.last_name,
+              role: item.role,
+              department_id: item.department_id,
+              department_name: item.department_name,
+              full_name: item.full_name,
+            }))
+          }
+        } else {
+          const { data, error } = await supabase
+            .from('users_with_details')
+            .select('id, first_name, last_name, role, department_id, department_name, full_name, active')
+            .eq('active', true)
+            .neq('id', user.id)
+            .order('full_name', { ascending: true })
+
+          if (error) {
+            throw error
+          }
+
+          users = (data ?? []).map((item) => ({
             id: item.id!,
             first_name: item.first_name,
             last_name: item.last_name,
@@ -535,13 +580,47 @@ export default function ChannelsPage() {
             department_name: item.department_name,
             full_name: item.full_name,
           }))
+        }
 
+        const ensureOwner = async () => {
+          if (!selectedChannel.created_by || selectedChannel.created_by === user.id) return
+          if (users.some((u) => u.id === selectedChannel.created_by)) return
+
+          const { data: owner, error } = await supabase
+            .from('users_with_details')
+            .select('id, first_name, last_name, role, department_id, department_name, full_name, active')
+            .eq('id', selectedChannel.created_by)
+            .maybeSingle()
+
+          if (!error && owner && (owner.active ?? true)) {
+            users.unshift({
+              id: owner.id!,
+              first_name: owner.first_name,
+              last_name: owner.last_name,
+              role: owner.role,
+              department_id: owner.department_id,
+              department_name: owner.department_name,
+              full_name: owner.full_name,
+            })
+          }
+        }
+
+        await ensureOwner()
+
+        const filtered = users.filter((item) => item.id && item.id !== user.id)
+
+        mentionableCacheRef.current.set(cacheKey, filtered)
         setMentionableUsers(filtered)
+        syncMentionTokens(messageDraft)
+      } catch (error) {
+        console.error('Nie udało się wczytać listy użytkowników do wzmiankowania', error)
+        mentionableCacheRef.current.set(cacheKey, [])
+        setMentionableUsers([])
       }
     }
 
     loadMentionableUsers()
-  }, [user])
+  }, [user, selectedChannel, messageDraft, syncMentionTokens])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -568,6 +647,13 @@ export default function ChannelsPage() {
       setMessages([])
     }
   }, [selectedChannelId, loadMessages])
+
+  useEffect(() => {
+    mentionTokensRef.current.clear()
+    setActiveMentionUserIds(new Set<string>())
+    setMentionState({ active: false, query: '', startIndex: -1 })
+    setMentionHighlightedIndex(0)
+  }, [selectedChannelId])
 
   useEffect(() => {
     if (!selectedChannelId) return

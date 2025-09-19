@@ -19,6 +19,7 @@ import {
   MessageSquare,
   MoreVertical,
   Plus,
+  Settings,
   Send,
   Unlock,
   Users,
@@ -62,6 +63,7 @@ type MentionableUser = {
 
 type ChannelWithAccess = ChannelRow & {
   channel_departments?: Array<{ department_id: number }>
+  channel_members?: Array<{ user_id: string }>
 }
 
 type MessageWithSender = ChannelMessageRow & {
@@ -150,6 +152,47 @@ export default function ChannelsPage() {
   const [channelMenuOpenId, setChannelMenuOpenId] = useState<string | null>(null)
   const menuRefs = useRef<Map<string, HTMLDivElement | null>>(new Map())
   const [archivingChannelId, setArchivingChannelId] = useState<string | null>(null)
+  const initialQueryChannelRef = useRef<string | null>(null)
+
+  const updateSelectedChannel = useCallback(
+    (channelId: string | null, options: { skipUrlUpdate?: boolean } = {}) => {
+      setSelectedChannelId(channelId)
+
+      if (options.skipUrlUpdate) {
+        return
+      }
+
+      if (typeof window === 'undefined') {
+        return
+      }
+
+      const params = new URLSearchParams(window.location.search)
+
+      if (channelId) {
+        params.set('channel', channelId)
+      } else {
+        params.delete('channel')
+      }
+
+      const query = params.toString()
+      router.replace(query ? `/dashboard/channels?${query}` : '/dashboard/channels', { scroll: false })
+    },
+    [router]
+  )
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const params = new URLSearchParams(window.location.search)
+    const requested = params.get('channel')
+
+    if (requested) {
+      initialQueryChannelRef.current = requested
+      updateSelectedChannel(requested, { skipUrlUpdate: true })
+    }
+  }, [updateSelectedChannel])
 
   const normalizeMessage = useCallback((message: MessageRecord): MessageWithSender => {
     const sender = (message.sender ?? userCacheRef.current.get(message.sender_id) ?? null) as UserRow | null
@@ -354,7 +397,7 @@ export default function ChannelsPage() {
     setChannelError(null)
     const { data, error } = await supabase
       .from('communication_channels')
-      .select('id, name, description, visibility, is_archived, created_at, created_by, updated_at, last_message_at, channel_departments ( department_id )')
+      .select('id, name, description, visibility, is_archived, created_at, created_by, updated_at, last_message_at, channel_departments ( department_id ), channel_members ( user_id )')
       .eq('is_archived', false)
       .order('last_message_at', { ascending: false })
 
@@ -378,17 +421,33 @@ export default function ChannelsPage() {
     const filtered = sortChannels(data ?? [])
     setChannels(filtered)
 
-    if (selectedChannelId) {
+    const requestedChannelId = initialQueryChannelRef.current
+
+    if (requestedChannelId) {
+      const hasRequested = filtered.some((channel) => channel.id === requestedChannelId)
+
+      if (hasRequested) {
+        updateSelectedChannel(requestedChannelId, { skipUrlUpdate: true })
+        setChannelError(null)
+      } else {
+        setChannelError('Nie masz dostępu do wskazanego kanału lub został on zarchiwizowany.')
+        updateSelectedChannel(filtered.length > 0 ? filtered[0]?.id ?? null : null)
+      }
+
+    } else if (selectedChannelId) {
       const stillExists = filtered.some((channel) => channel.id === selectedChannelId)
       if (!stillExists) {
-        setSelectedChannelId(filtered.length > 0 ? filtered[0].id : null)
+        updateSelectedChannel(filtered.length > 0 ? filtered[0]?.id ?? null : null)
       }
     } else if (filtered.length > 0) {
-      setSelectedChannelId(filtered[0].id)
+      updateSelectedChannel(filtered[0].id)
+    } else {
+      updateSelectedChannel(null)
     }
 
+    initialQueryChannelRef.current = null
     setLoadingChannels(false)
-  }, [selectedChannelId])
+  }, [selectedChannelId, updateSelectedChannel])
 
   const loadMessages = useCallback(async (channelId: string) => {
     setLoadingMessages(true)
@@ -516,9 +575,10 @@ export default function ChannelsPage() {
       return
     }
 
-    const cacheKey = selectedChannel.visibility === 'restricted'
-      ? `restricted-${selectedChannel.id}`
-      : 'public'
+    const manualMemberIds = (selectedChannel.channel_members ?? [])
+      .map((member) => member.user_id)
+      .filter((id): id is string => typeof id === 'string')
+    const cacheKey = `${selectedChannel.visibility}-${selectedChannel.id}-${manualMemberIds.sort().join(':')}`
 
     const cached = mentionableCacheRef.current.get(cacheKey)
     if (cached) {
@@ -606,6 +666,40 @@ export default function ChannelsPage() {
         }
 
         await ensureOwner()
+
+        const ensureManualMembers = async () => {
+          const manualIds = (selectedChannel.channel_members ?? [])
+            .map((member) => member.user_id)
+            .filter((id): id is string => Boolean(id) && id !== user.id)
+
+          const missingManualIds = manualIds.filter((id) => !users.some((user) => user.id === id))
+
+          if (!missingManualIds.length) return
+
+          const { data, error } = await supabase
+            .from('users_with_details')
+            .select('id, first_name, last_name, role, department_id, department_name, full_name, active')
+            .in('id', missingManualIds)
+            .eq('active', true)
+
+          if (error) {
+            throw error
+          }
+
+          users.push(
+            ...(data ?? []).map((item) => ({
+              id: item.id!,
+              first_name: item.first_name,
+              last_name: item.last_name,
+              role: item.role,
+              department_id: item.department_id,
+              department_name: item.department_name,
+              full_name: item.full_name,
+            }))
+          )
+        }
+
+        await ensureManualMembers()
 
         const filtered = users.filter((item) => item.id && item.id !== user.id)
 
@@ -695,6 +789,64 @@ export default function ChannelsPage() {
       supabase.removeChannel(channel)
     }
   }, [selectedChannelId, ensureSender, normalizeMessage, upsertMessage, fetchMessageWithRelations])
+
+  useEffect(() => {
+    if (!selectedChannelId) return
+
+    const realtimeChannel = supabase
+      .channel(`realtime-channel-members-${selectedChannelId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'channel_members',
+          filter: `channel_id=eq.${selectedChannelId}`,
+        },
+        (payload) => {
+          setChannels((prev) => {
+            let changed = false
+            const updated = prev.map((channel) => {
+              if (channel.id !== selectedChannelId) return channel
+
+              const members = new Set(channel.channel_members?.map((member) => member.user_id) ?? [])
+
+              if (payload.eventType === 'INSERT') {
+                const newMember = (payload.new as { user_id?: string })?.user_id
+                if (newMember && !members.has(newMember)) {
+                  changed = true
+                  members.add(newMember)
+                }
+              } else if (payload.eventType === 'DELETE') {
+                const oldMember = (payload.old as { user_id?: string })?.user_id
+                if (oldMember && members.has(oldMember)) {
+                  changed = true
+                  members.delete(oldMember)
+                }
+              }
+
+              if (!changed) return channel
+
+              return {
+                ...channel,
+                channel_members: Array.from(members).map((user_id) => ({ user_id })),
+              }
+            })
+
+            if (changed) {
+              mentionableCacheRef.current.clear()
+            }
+
+            return updated
+          })
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(realtimeChannel)
+    }
+  }, [selectedChannelId])
 
   useEffect(() => {
     const messagesContainer = messagesContainerRef.current
@@ -924,7 +1076,7 @@ export default function ChannelsPage() {
       setChannels((prev) => {
         const next = prev.filter((channel) => channel.id !== channelId)
         if (selectedChannelId === channelId) {
-          setSelectedChannelId(next.length ? next[0].id : null)
+          updateSelectedChannel(next.length ? next[0].id : null)
         }
         return next
       })
@@ -932,7 +1084,7 @@ export default function ChannelsPage() {
       closeChannelMenu()
       setArchivingChannelId(null)
     },
-    [closeChannelMenu, selectedChannelId]
+    [closeChannelMenu, selectedChannelId, updateSelectedChannel]
   )
 
   const handleCreateChannel = useCallback(async () => {
@@ -978,9 +1130,9 @@ export default function ChannelsPage() {
     resetForm()
     setCreateDialogOpen(false)
     await loadChannels()
-    setSelectedChannelId(channelId)
+    updateSelectedChannel(channelId)
     setCreatingChannel(false)
-  }, [channelForm, user, loadChannels, resetForm])
+  }, [channelForm, user, loadChannels, resetForm, updateSelectedChannel])
 
   const toggleDepartment = useCallback((departmentId: number, checked: boolean) => {
     setChannelForm((prev) => {
@@ -1095,7 +1247,8 @@ export default function ChannelsPage() {
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => {
-                          setSelectedChannelId(channel.id)
+                          updateSelectedChannel(channel.id)
+                          setChannelError(null)
                           closeChannelMenu()
                         }}
                         className={`flex-1 rounded-xl border px-4 py-3 text-left transition-all ${
@@ -1143,14 +1296,14 @@ export default function ChannelsPage() {
                           onClick={(event) => {
                             event.stopPropagation()
                             closeChannelMenu()
-                            setSelectedChannelId(channel.id)
+                            updateSelectedChannel(channel.id)
+                            setChannelError(null)
                             router.push(`/dashboard/channels/${channel.id}/settings`)
                           }}
                           className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm hover:bg-gray-100"
-                          disabled
                         >
-                          Ustawienia kanału
-                          <span className="text-xs text-gray-400">Wkrótce</span>
+                          <span>Ustawienia kanału</span>
+                          <Settings className="h-3 w-3" />
                         </button>
                         <button
                           type="button"

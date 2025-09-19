@@ -136,6 +136,56 @@ export type Database = {
           },
         ]
       }
+      channel_members: {
+        Row: {
+          added_at: string | null
+          added_by: string | null
+          channel_id: string
+          user_id: string
+        }
+        Insert: {
+          added_at?: string | null
+          added_by?: string | null
+          channel_id: string
+          user_id: string
+        }
+        Update: {
+          added_at?: string | null
+          added_by?: string | null
+          channel_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "channel_members_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_members_channel_id_fkey"
+            columns: ["channel_id"]
+            isOneToOne: false
+            referencedRelation: "communication_channels"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "channel_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users_with_details"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       communication_channels: {
         Row: {
           created_at: string | null
@@ -1042,6 +1092,20 @@ export type Database = {
           p_mentions?: string[] | null
         }
         Returns: Database['public']['Tables']['channel_messages']['Row']
+      }
+      add_channel_member: {
+        Args: {
+          p_channel_id: string
+          p_user_id: string
+        }
+        Returns: Database['public']['Tables']['channel_members']['Row']
+      }
+      remove_channel_member: {
+        Args: {
+          p_channel_id: string
+          p_user_id: string
+        }
+        Returns: void
       }
       create_channel: {
         Args: {

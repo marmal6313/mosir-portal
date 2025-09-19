@@ -65,6 +65,20 @@ CREATE INDEX IF NOT EXISTS idx_channel_message_mentions_user
 ALTER TABLE IF EXISTS notifications
     ADD COLUMN IF NOT EXISTS action_url TEXT;
 
+-- Członkowie kanałów (użytkownicy spoza przypisanych działów)
+CREATE TABLE IF NOT EXISTS channel_members (
+    channel_id UUID NOT NULL REFERENCES communication_channels(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    added_by UUID REFERENCES users(id) ON DELETE SET NULL,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (channel_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_channel_members_user
+    ON channel_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_channel_members_channel
+    ON channel_members(channel_id);
+
 CREATE OR REPLACE FUNCTION bump_channel_last_message()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -134,6 +148,15 @@ BEGIN
         RETURN TRUE;
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+          FROM channel_members cmem
+         WHERE cmem.channel_id = p_channel
+           AND cmem.user_id = v_user
+    ) THEN
+        RETURN TRUE;
+    END IF;
+
     RETURN EXISTS (
         SELECT 1
           FROM channel_message_mentions cmm
@@ -197,6 +220,8 @@ GRANT EXECUTE ON FUNCTION set_channel_created_by() TO authenticated, service_rol
 DROP FUNCTION IF EXISTS create_channel(uuid, text, text, text, integer[]);
 DROP FUNCTION IF EXISTS create_channel(text, text, text, integer[]);
 DROP FUNCTION IF EXISTS create_channel_message(uuid, text, uuid[]);
+DROP FUNCTION IF EXISTS add_channel_member(uuid, uuid);
+DROP FUNCTION IF EXISTS remove_channel_member(uuid, uuid);
 
 CREATE OR REPLACE FUNCTION create_channel(
     p_name TEXT,
@@ -248,6 +273,65 @@ END;
 $$;
 
 GRANT EXECUTE ON FUNCTION create_channel(TEXT, TEXT, TEXT, INTEGER[]) TO authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION add_channel_member(
+    p_channel_id UUID,
+    p_user_id UUID
+)
+RETURNS channel_members
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_actor UUID := auth.uid();
+    v_member channel_members%ROWTYPE;
+BEGIN
+    IF v_actor IS NULL THEN
+        RAISE EXCEPTION 'Brak uwierzytelnionego użytkownika';
+    END IF;
+
+    IF NOT channel_is_owned_by_user(p_channel_id) THEN
+        RAISE EXCEPTION 'Brak uprawnień do zarządzania kanałem';
+    END IF;
+
+    INSERT INTO channel_members (channel_id, user_id, added_by)
+    VALUES (p_channel_id, p_user_id, v_actor)
+    ON CONFLICT (channel_id, user_id) DO UPDATE
+      SET added_by = EXCLUDED.added_by,
+          added_at = NOW()
+    RETURNING * INTO v_member;
+
+    RETURN v_member;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION remove_channel_member(
+    p_channel_id UUID,
+    p_user_id UUID
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    IF auth.uid() IS NULL THEN
+        RAISE EXCEPTION 'Brak uwierzytelnionego użytkownika';
+    END IF;
+
+    IF NOT channel_is_owned_by_user(p_channel_id) THEN
+        RAISE EXCEPTION 'Brak uprawnień do zarządzania kanałem';
+    END IF;
+
+    DELETE FROM channel_members
+     WHERE channel_id = p_channel_id
+       AND user_id = p_user_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION add_channel_member(UUID, UUID) TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION remove_channel_member(UUID, UUID) TO authenticated, service_role;
 
 CREATE OR REPLACE FUNCTION create_channel_message(
     p_channel_id UUID,
@@ -340,6 +424,8 @@ DROP POLICY IF EXISTS "Channel messages - read access" ON channel_messages;
 DROP POLICY IF EXISTS "Channel messages - authors can write" ON channel_messages;
 DROP POLICY IF EXISTS "Channel messages - authors can delete own" ON channel_messages;
 DROP POLICY IF EXISTS "Channel message mentions - read access" ON channel_message_mentions;
+DROP POLICY IF EXISTS "Channel members - read access" ON channel_members;
+DROP POLICY IF EXISTS "Channel members - manage" ON channel_members;
 -- Polityki dla communication_channels
 CREATE POLICY "Channels - read access"
     ON communication_channels
@@ -409,6 +495,20 @@ CREATE POLICY "Channel message mentions - read access"
               AND channel_is_accessible(cm.channel_id)
         )
     );
+
+CREATE POLICY "Channel members - read access"
+    ON channel_members
+    FOR SELECT
+    USING (
+        channel_is_accessible(channel_id)
+        OR user_id = auth.uid()
+    );
+
+CREATE POLICY "Channel members - manage"
+    ON channel_members
+    FOR ALL
+    USING (channel_is_owned_by_user(channel_id))
+    WITH CHECK (channel_is_owned_by_user(channel_id));
 
 COMMENT ON TABLE communication_channels IS 'Kanały dyskusyjne dla zespołów MOSiR';
 COMMENT ON COLUMN communication_channels.visibility IS 'public - dostępne dla wszystkich, restricted - tylko wskazane działy';

@@ -1,10 +1,11 @@
 "use client"
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { 
   ArrowLeft, 
   Edit3, 
@@ -68,7 +69,83 @@ type UserOption = {
   department_name: string | null
 }
 
+const normalizeText = (value: string) =>
+  value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+const isBoundaryChar = (char: string | undefined) => {
+  if (!char) return true
+  return /[\s,.;:!?()\[\]{}"'`]/.test(char)
+}
+
+const hasMentionToken = (text: string, token: string) => {
+  let index = text.indexOf(token)
+  while (index !== -1) {
+    const before = index === 0 ? undefined : text[index - 1]
+    const after = text[index + token.length]
+
+    if (isBoundaryChar(before) && isBoundaryChar(after)) {
+      return true
+    }
+
+    index = text.indexOf(token, index + 1)
+  }
+
+  return false
+}
+
+const extractMentionedUserIds = (
+  comment: string,
+  mentionableUsers: UserOption[],
+  authorId?: string
+) => {
+  if (!comment || mentionableUsers.length === 0) return [] as string[]
+
+  const normalizedComment = normalizeText(comment)
+  const mentioned = new Set<string>()
+
+  mentionableUsers.forEach((user) => {
+    if (!user.id || user.id === authorId) return
+
+    const normalizedFullName = user.full_name ? normalizeText(user.full_name) : ''
+    const tokens = new Set<string>()
+
+    if (normalizedFullName) {
+      tokens.add(`@${normalizedFullName}`)
+
+      const parts = normalizedFullName.split(' ')
+      if (parts[0]) tokens.add(`@${parts[0]}`)
+      if (parts.length > 1) {
+        const lastPart = parts[parts.length - 1]
+        if (lastPart) tokens.add(`@${lastPart}`)
+      }
+    }
+
+    if (user.email) {
+      const emailPrefix = user.email.split('@')[0]
+      const normalizedEmailPrefix = normalizeText(emailPrefix.replace(/[._-]+/g, ' '))
+      if (normalizedEmailPrefix) {
+        tokens.add(`@${normalizedEmailPrefix}`)
+      }
+    }
+
+    for (const token of tokens) {
+      if (hasMentionToken(normalizedComment, token)) {
+        mentioned.add(user.id)
+        break
+      }
+    }
+  })
+
+  return Array.from(mentioned)
+}
+
 export default function TaskDetails({ task }: { task: Omit<Database['public']['Views']['tasks_with_details']['Row'], 'id'> & { id: string } }) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const [editingField, setEditingField] = useState<string | null>(null)
   const [editValues, setEditValues] = useState<{ 
     status: string; 
@@ -94,6 +171,12 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
   const [postingComment, setPostingComment] = useState(false)
   const [showDescription, setShowDescription] = useState(true)
   const [users, setUsers] = useState<UserOption[]>([])
+  const [mentionState, setMentionState] = useState<{ active: boolean; query: string; startIndex: number }>({
+    active: false,
+    query: '',
+    startIndex: -1,
+  })
+  const [mentionHighlightedIndex, setMentionHighlightedIndex] = useState(0)
 
   // Pobierz listę użytkowników
   useEffect(() => {
@@ -119,6 +202,139 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
 
     fetchUsers()
   }, [])
+
+  const mentionSuggestions = useMemo(() => {
+    if (!mentionState.active) return [] as UserOption[]
+
+    const normalizedQuery = normalizeText(mentionState.query)
+
+    const activeMentionIds = new Set(extractMentionedUserIds(newComment, users))
+
+    const candidateUsers = users.filter((user) => user.id && !activeMentionIds.has(user.id))
+
+    if (!normalizedQuery.length) {
+      return candidateUsers.slice(0, 6)
+    }
+
+    return candidateUsers
+      .filter((user) => {
+        const tokens = new Set<string>()
+
+        if (user.full_name) {
+          const normalizedFull = normalizeText(user.full_name)
+          if (normalizedFull) tokens.add(normalizedFull)
+
+          const parts = normalizedFull.split(' ')
+          parts.forEach((part) => {
+            if (part) tokens.add(part)
+          })
+        }
+
+        if (user.email) {
+          const prefix = user.email.split('@')[0]
+          const normalizedPrefix = normalizeText(prefix.replace(/[._-]+/g, ' '))
+          if (normalizedPrefix) tokens.add(normalizedPrefix)
+        }
+
+        return Array.from(tokens).some((token) => token.includes(normalizedQuery))
+      })
+      .slice(0, 6)
+  }, [mentionState.active, mentionState.query, users, newComment])
+
+  useEffect(() => {
+    if (!mentionState.active) {
+      setMentionHighlightedIndex(0)
+      return
+    }
+
+    if (mentionHighlightedIndex >= mentionSuggestions.length) {
+      setMentionHighlightedIndex(0)
+    }
+  }, [mentionState.active, mentionHighlightedIndex, mentionSuggestions.length])
+
+  const updateMentionState = useCallback(
+    (value: string, caretPosition: number) => {
+      const substring = value.slice(0, caretPosition)
+      const atIndex = substring.lastIndexOf('@')
+
+      if (atIndex === -1) {
+        if (mentionState.active) {
+          setMentionState({ active: false, query: '', startIndex: -1 })
+          setMentionHighlightedIndex(0)
+        }
+        return
+      }
+
+      if (atIndex > 0) {
+        const charBefore = substring[atIndex - 1]
+        if (charBefore && !/[\s(\[{]/.test(charBefore)) {
+          if (mentionState.active) {
+            setMentionState({ active: false, query: '', startIndex: -1 })
+            setMentionHighlightedIndex(0)
+          }
+          return
+        }
+      }
+
+      const query = substring.slice(atIndex + 1)
+
+      if (!query.length) {
+        setMentionState({ active: true, query: '', startIndex: atIndex })
+        setMentionHighlightedIndex(0)
+        return
+      }
+
+      if (/[\s@,.;:!?]/.test(query)) {
+        if (mentionState.active) {
+          setMentionState({ active: false, query: '', startIndex: -1 })
+          setMentionHighlightedIndex(0)
+        }
+        return
+      }
+
+      setMentionState({ active: true, query: query.toLowerCase(), startIndex: atIndex })
+      setMentionHighlightedIndex(0)
+    },
+    [mentionState.active]
+  )
+
+  const insertMention = useCallback(
+    (user: UserOption) => {
+      const textarea = textareaRef.current
+      if (!textarea) return
+
+      const caret = textarea.selectionStart
+      const anchor = mentionState.startIndex
+
+      if (anchor < 0 || anchor > caret) {
+        setMentionState({ active: false, query: '', startIndex: -1 })
+        setMentionHighlightedIndex(0)
+        return
+      }
+
+      const displayName = user.full_name || user.email || 'użytkownik'
+      const token = `@${displayName}`
+      const insertion = `${token} `
+
+      setNewComment((prev) => {
+        const before = prev.slice(0, anchor)
+        const after = prev.slice(caret)
+        return `${before}${insertion}${after}`
+      })
+
+      requestAnimationFrame(() => {
+        const textareaElement = textareaRef.current
+        if (!textareaElement) return
+        const nextCaret = anchor + insertion.length
+        textareaElement.focus()
+        textareaElement.setSelectionRange(nextCaret, nextCaret)
+      })
+
+      setMentionState({ active: false, query: '', startIndex: -1 })
+      setMentionHighlightedIndex(0)
+    },
+    [mentionState.startIndex]
+  )
 
   const fetchChanges = useCallback(async () => {
     try {
@@ -304,6 +520,8 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
         return
       }
 
+      const mentionIds = extractMentionedUserIds(trimmed, users, session.user.id)
+
       const response = await fetch('/api/tasks/comments', {
         method: 'POST',
         headers: {
@@ -313,6 +531,7 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
         body: JSON.stringify({
           taskId: task.id,
           comment: trimmed,
+          mentions: mentionIds,
         })
       })
 
@@ -326,6 +545,8 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
 
       const createdComment = payload?.comment as TaskComment | undefined
       setNewComment('')
+      setMentionState({ active: false, query: '', startIndex: -1 })
+      setMentionHighlightedIndex(0)
       setSuccess('Komentarz dodany')
 
       if (createdComment) {
@@ -815,25 +1036,113 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
             )}
           </div>
           <div className="border-t border-gray-200 p-4 sm:p-6 space-y-3">
-            <textarea
-              value={newComment}
-              onChange={(event) => setNewComment(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-                  event.preventDefault()
-                  handleAddComment()
-                }
-              }}
-              rows={3}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-              placeholder="Dodaj komentarz lub zapytaj zespół..."
-            />
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">Ctrl + Enter aby wysłać</span>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+              <div className="relative w-full lg:flex-1">
+                <Textarea
+                  ref={textareaRef}
+                  value={newComment}
+                  onChange={(event) => {
+                    const { value, selectionStart } = event.target
+                    setNewComment(value)
+                    updateMentionState(value, selectionStart ?? value.length)
+                  }}
+                  onKeyDown={(event) => {
+                    if (mentionState.active && mentionSuggestions.length > 0) {
+                      if (event.key === 'ArrowDown') {
+                        event.preventDefault()
+                        setMentionHighlightedIndex((prev) => (prev + 1) % mentionSuggestions.length)
+                        return
+                      }
+                      if (event.key === 'ArrowUp') {
+                        event.preventDefault()
+                        setMentionHighlightedIndex((prev) => (prev - 1 + mentionSuggestions.length) % mentionSuggestions.length)
+                        return
+                      }
+                      if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                        event.preventDefault()
+                        const selected = mentionSuggestions[mentionHighlightedIndex]
+                        if (selected) insertMention(selected)
+                        return
+                      }
+                      if (event.key === 'Tab') {
+                        event.preventDefault()
+                        const selected = mentionSuggestions[mentionHighlightedIndex]
+                        if (selected) insertMention(selected)
+                        return
+                      }
+                      if (event.key === 'Escape') {
+                        event.preventDefault()
+                        setMentionState({ active: false, query: '', startIndex: -1 })
+                        setMentionHighlightedIndex(0)
+                        return
+                      }
+                    }
+
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                      event.preventDefault()
+                      handleAddComment()
+                      return
+                    }
+                  }}
+                  onBlur={() => {
+                    setTimeout(() => {
+                      setMentionState({ active: false, query: '', startIndex: -1 })
+                      setMentionHighlightedIndex(0)
+                    }, 100)
+                  }}
+                  onClick={(event) => {
+                    const target = event.target as HTMLTextAreaElement
+                    updateMentionState(target.value, target.selectionStart ?? target.value.length)
+                  }}
+                  onKeyUp={(event) => {
+                    const target = event.target as HTMLTextAreaElement
+                    updateMentionState(target.value, target.selectionStart ?? target.value.length)
+                  }}
+                  onSelect={(event) => {
+                    const target = event.target as HTMLTextAreaElement
+                    updateMentionState(target.value, target.selectionStart ?? target.value.length)
+                  }}
+                  rows={3}
+                  className="min-h-[90px] w-full resize-none"
+                  placeholder="Dodaj komentarz lub zapytaj zespół..."
+                />
+                {mentionState.active && mentionSuggestions.length > 0 && (
+                  <div className="absolute bottom-full left-0 z-20 mb-2 w-full max-w-sm overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl">
+                    {mentionSuggestions.map((userOption, index) => {
+                      const label = userOption.full_name || userOption.email || 'Nieznany'
+                      const isActive = index === mentionHighlightedIndex
+                      return (
+                        <button
+                          key={userOption.id}
+                          type="button"
+                          className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm ${
+                            isActive ? 'bg-blue-600 text-white' : 'hover:bg-gray-100'
+                          }`}
+                          onMouseDown={(event) => {
+                            event.preventDefault()
+                            insertMention(userOption)
+                          }}
+                          onMouseEnter={() => setMentionHighlightedIndex(index)}
+                        >
+                          <span className="font-medium">{label}</span>
+                          {userOption.department_name && (
+                            <span className={`ml-3 text-xs ${isActive ? 'text-blue-100' : 'text-gray-500'}`}>
+                              {userOption.department_name}
+                            </span>
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-gray-500">
+                  Wpisz @ i zacznij wpisywać imię, aby oznaczyć osobę. Użyj Ctrl + Enter, żeby szybko wysłać komentarz.
+                </p>
+              </div>
               <Button
                 onClick={handleAddComment}
                 disabled={postingComment || newComment.trim().length === 0}
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 lg:w-auto"
               >
                 {postingComment ? (
                   'Wysyłanie...'

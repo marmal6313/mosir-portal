@@ -26,6 +26,25 @@ export default function Login() {
 
   // Załaduj ustawienia systemu
   useEffect(() => {
+
+    // Wyloguj lokalnie, jeśli przeszliśmy tu z uszkodzoną sesją
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        return
+      }
+
+      if (session?.expires_at && session.expires_at * 1000 < Date.now()) {
+        supabase.auth.signOut({ scope: 'local' }).catch((signOutError) => {
+          console.error('Błąd podczas czyszczenia lokalnej sesji:', signOutError)
+        })
+      }
+    }).catch((sessionError) => {
+      console.error('Błąd podczas sprawdzania sesji:', sessionError)
+      supabase.auth.signOut({ scope: 'local' }).catch((signOutError) => {
+        console.error('Błąd podczas awaryjnego czyszczenia sesji:', signOutError)
+      })
+    })
+
     loadSystemSettings()
     
     // Sprawdź czy jest komunikat o pomyślnym resetowaniu hasła
@@ -71,21 +90,43 @@ export default function Login() {
     setLoading(true)
     setError('')
 
+    let timeoutId: number | undefined
+
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      const loginResult = await Promise.race([
+        supabase.auth.signInWithPassword({
+          email,
+          password,
+        }),
+        new Promise<never>((_, reject) => {
+          timeoutId = window.setTimeout(() => {
+            reject(new Error('AUTH_TIMEOUT'))
+          }, 8000)
+        }),
+      ])
+
+      const { error: signInError } = loginResult
 
       if (signInError) {
+        console.error('Logowanie nie powiodło się:', signInError)
         setError('Nieprawidłowy email lub hasło')
         return
       }
 
-      router.push('/dashboard')
-    } catch {
-      setError('Wystąpił błąd podczas logowania')
+      router.replace('/dashboard')
+    } catch (err) {
+      if ((err as Error).message === 'AUTH_TIMEOUT') {
+        console.error('Logowanie nie odpowiedziało w czasie – prawdopodobne problemy z siecią Supabase')
+        setError('Brak odpowiedzi z serwera uwierzytelniania. Sprawdź połączenie i spróbuj ponownie.')
+        return
+      }
+
+      console.error('Wystąpił błąd podczas logowania:', err)
+      setError('Wystąpił nieoczekiwany błąd podczas logowania. Spróbuj ponownie lub skontaktuj się z administratorem.')
     } finally {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId)
+      }
       setLoading(false)
     }
   }

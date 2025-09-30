@@ -1,24 +1,57 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 export default function Home() {
   const router = useRouter()
+  const [statusMessage, setStatusMessage] = useState('Przekierowywanie...')
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
-      
-      if (user) {
-        router.push('/dashboard')
-      } else {
-        router.push('/login')
-      }
-    }
+    let isMounted = true
+    let resolved = false
 
-    checkAuth()
+    const fallbackTimer = setTimeout(() => {
+      if (!resolved && isMounted) {
+        console.warn('Auth check timed out, redirecting to /login')
+        setStatusMessage('Nie udało się zweryfikować sesji. Przekierowuję do logowania...')
+        router.replace('/login')
+      }
+    }, 4000)
+
+    supabase.auth.getUser()
+      .then(({ data: { user }, error }) => {
+        if (!isMounted) return
+        resolved = true
+        clearTimeout(fallbackTimer)
+
+        if (error) {
+          console.error('Auth check failed, redirecting to /login', error)
+          setStatusMessage('Sesja wygasła. Przekierowuję do logowania...')
+          router.replace('/login')
+          return
+        }
+
+        if (user) {
+          router.replace('/dashboard')
+        } else {
+          router.replace('/login')
+        }
+      })
+      .catch((error) => {
+        if (!isMounted) return
+        resolved = true
+        clearTimeout(fallbackTimer)
+        console.error('Auth check threw, redirecting to /login', error)
+        setStatusMessage('Wystąpił błąd. Przekierowuję do logowania...')
+        router.replace('/login')
+      })
+
+    return () => {
+      isMounted = false
+      clearTimeout(fallbackTimer)
+    }
   }, [router])
 
   return (
@@ -30,7 +63,7 @@ export default function Home() {
           </div>
         </div>
         <h1 className="mt-4 sm:mt-6 text-lg sm:text-2xl font-bold text-gray-700">Ładowanie MOSiR Portal</h1>
-        <p className="mt-2 text-sm sm:text-base text-gray-500">Przekierowywanie...</p>
+        <p className="mt-2 text-sm sm:text-base text-gray-500">{statusMessage}</p>
       </div>
     </div>
   )

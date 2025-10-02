@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { GanttChart, type GanttItem } from '@/components/GanttChart'
 import type { Database } from '@/types/database'
@@ -12,6 +12,7 @@ import { Search, Filter, Plus, Download, RefreshCw } from 'lucide-react'
 import { useAuthContext } from '@/hooks/useAuth'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { getStatusLabel, getPriorityLabel, getStatusColor, getPriorityColor } from '@/lib/tasks-utils'
+import { useRouter } from 'next/navigation'
 
 // ===== Date helpers — stabilne dla Gantta =====
 // "YYYY-MM-DD" ?
@@ -83,8 +84,47 @@ const getViewRange = (viewMode: 'daily'|'weekly'|'monthly') => {
   return { viewStart: startOfMonthLocal(today), viewEnd: endOfMonthLocal(today) }
 }
 
+type OwnerScope = 'all' | 'mine' | 'others' | 'department'
+
+
+const normalizeDateToMidnight = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate(), 0, 0, 0, 0);
+
+const PRINT_STYLES = `
+  :root { color-scheme: light; }
+  @page { margin: 18mm; }
+  body.gantt-export-print { margin: 0; font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; background: #f1f5f9; color: #0f172a; }
+  .gantt-export-wrapper { padding: 16px 0 20px 0; }
+  .gantt-export-preview { margin-top: 16px; }
+  .gantt-export-root { width: 100%; margin: 0; }
+  .gantt-export-card { background: #ffffff; border-radius: 18px; border: 1px solid #e2e8f0; box-shadow: 0 24px 48px -28px rgba(15, 23, 42, 0.35); padding: 24px 0 28px; }
+  .gantt-export-header h3 { margin: 0; font-size: 20px; font-weight: 600; color: #0f172a; }
+  .gantt-export-header p { margin: 6px 0 0; font-size: 13px; color: #475569; }
+  .gantt-export-meta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 14px; font-size: 12px; color: #64748b; }
+  .gantt-export-meta span { display: inline-flex; align-items: center; gap: 6px; }
+  .gantt-export-table-wrapper { margin: 22px 0 0 0; border-radius: 14px; border: 1px solid #e2e8f0; overflow: hidden; background: #ffffff; padding: 0 10px 0 4px; }
+  .gantt-export-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .gantt-export-table thead { background: #dbeafe; color: #0f172a; text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; }
+  .gantt-export-table th { padding: 12px 14px; text-align: left; font-weight: 600; border-bottom: 1px solid #bfdbfe; }
+  .gantt-export-col-task { width: 34%; }
+  .gantt-export-col-assignee { width: 14%; }
+  .gantt-export-table th.gantt-export-date { text-align: center; white-space: nowrap; }
+  .gantt-export-date span { display: block; font-size: 10px; line-height: 1.2; }
+  .gantt-export-table tbody tr:nth-child(even) { background: #f8fafc; }
+  .gantt-export-table td { padding: 12px 14px; border-bottom: 1px solid #e2e8f0; vertical-align: middle; font-size: 12px; }
+  .gantt-export-task { font-weight: 600; color: #0f172a; }
+  .gantt-export-assignee { color: #475569; }
+  .gantt-export-cell { text-align: center; }
+  .gantt-export-cell-active { display: inline-flex; align-items: center; justify-content: center; height: 30px; width: 30px; border-radius: 8px; background: #dbeafe; border: 1px solid #93c5fd; color: #1d4ed8; font-weight: 600; }
+  .gantt-export-cell-empty { color: #cbd5f5; font-size: 14px; }
+  .gantt-export-empty { border: 1px dashed #cbd5f5; border-radius: 14px; background: #f8fafc; padding: 32px; text-align: center; font-size: 13px; color: #64748b; }
+  .gantt-export-warning { border: 1px dashed #facc15; border-radius: 12px; background: #fef9c3; padding: 20px; font-size: 13px; color: #854d0e; text-align: center; }
+  @media print { body.gantt-export-print { background: #ffffff; } .gantt-export-wrapper { padding: 0; } .gantt-export-card { box-shadow: none; border: none; } }
+`;
+
 const GanttPage = () => {
-  const { profile } = useAuthContext()
+  const { profile, user } = useAuthContext()
+  const router = useRouter()
   const [ganttTasks, setGanttTasks] = useState<GanttItem[]>([])
   const [filteredTasks, setFilteredTasks] = useState<GanttItem[]>([])
   const [localLoading, setLocalLoading] = useState(true)
@@ -96,8 +136,16 @@ const GanttPage = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const [dateFilter, setDateFilter] = useState<string>('all')
+  const [ownerFilter, setOwnerFilter] = useState<OwnerScope>('all')
   const [sortBy, setSortBy] = useState<string>('startDate')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+
+  const ownerFilterOptions: { value: OwnerScope; label: string; disabled?: boolean }[] = [
+    { value: 'all', label: 'Wszyscy użytkownicy' },
+    { value: 'mine', label: 'Moje zadania' },
+    { value: 'others', label: 'Innych użytkowników' },
+    { value: 'department', label: 'Mój dział', disabled: !profile?.department_id },
+  ]
 
   // Widok
   const [viewMode, setViewMode] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
@@ -118,9 +166,51 @@ const GanttPage = () => {
     priority: 'medium',
     progress: 0,
     assignee: UNASSIGNED,   // zamiast '' - bezpieczna wartość
+    assigneeId: undefined,
     startDate: new Date(),
     endDate: new Date(new Date().setDate(new Date().getDate() + 7))
   })
+
+  const [showPdfExportModal, setShowPdfExportModal] = useState(false)
+  const [pdfStartDate, setPdfStartDate] = useState<string>(toDateInputValue(new Date()))
+  const [pdfError, setPdfError] = useState<string | null>(null)
+  const pdfStartDateValue = useMemo(() => {
+    if (!pdfStartDate) return null
+    const parsed = new Date(`${pdfStartDate}T00:00:00`)
+    if (Number.isNaN(parsed.getTime())) return null
+    return normalizeDateToMidnight(parsed)
+  }, [pdfStartDate])
+
+  const pdfPreviewDates = useMemo(() => {
+    if (!pdfStartDateValue) return []
+    return Array.from({ length: 7 }, (_, index) => addDays(pdfStartDateValue, index))
+  }, [pdfStartDateValue])
+
+  const pdfTasksForExport = useMemo(() => {
+    if (!pdfStartDateValue) return []
+    const rangeEnd = addDays(pdfStartDateValue, 6)
+    return filteredTasks
+      .map(task => {
+        const normalizedStart = normalizeDateToMidnight(task.startDate)
+        const normalizedEnd = normalizeDateToMidnight(task.endDate ?? task.startDate)
+        return { ...task, startDate: normalizedStart, endDate: normalizedEnd }
+      })
+      .filter(task => task.endDate >= pdfStartDateValue && task.startDate <= rangeEnd)
+      .sort((a, b) => {
+        const startDiff = a.startDate.getTime() - b.startDate.getTime()
+        if (startDiff !== 0) return startDiff
+        return (a.title || '').localeCompare(b.title || '')
+      })
+  }, [filteredTasks, pdfStartDateValue])
+
+  const pdfRangeLabel = useMemo(() => {
+    if (!pdfStartDateValue) return ''
+    const rangeEnd = addDays(pdfStartDateValue, 6)
+    return `${pdfStartDateValue.toLocaleDateString('pl-PL')} - ${rangeEnd.toLocaleDateString('pl-PL')}`
+  }, [pdfStartDateValue])
+
+  const previewRef = useRef<HTMLDivElement | null>(null)
+
 
   // ===== Nowe helpery dla zakresu widoku =====
   const atMidnight = (d: Date) => { const x = new Date(d); x.setHours(0,0,0,0); return x; };
@@ -156,6 +246,7 @@ const GanttPage = () => {
           updated_at,
           department_id,
           department_name,
+          assigned_to,
           assigned_to_name
         `)
         .order('created_at', { ascending: false })
@@ -207,6 +298,7 @@ const GanttPage = () => {
             status: (task.status as 'new' | 'in_progress' | 'completed' | 'cancelled') || 'new',
             priority: (task.priority as 'low' | 'medium' | 'high') || 'medium',
             assignee: task.assigned_to_name || 'Nieprzydzielone',
+            assigneeId: task.assigned_to,
             description: task.description || undefined,
             department: task.department_name || undefined,
             department_id: task.department_id || undefined
@@ -250,6 +342,8 @@ const GanttPage = () => {
   // Filtrowanie/sortowanie – liczone na znormalizowanych datach
   useEffect(() => {
     let filtered = [...ganttTasks]
+    const currentUserId = profile?.id ?? user?.id ?? null
+    const currentDepartmentId = profile?.department_id ?? null
 
     if (debouncedSearchTerm) {
       const q = debouncedSearchTerm.toLowerCase()
@@ -261,6 +355,14 @@ const GanttPage = () => {
 
     if (statusFilter !== 'all') filtered = filtered.filter(t => t.status === statusFilter)
     if (priorityFilter !== 'all') filtered = filtered.filter(t => t.priority === priorityFilter)
+
+    if (ownerFilter === 'mine' && currentUserId) {
+      filtered = filtered.filter(t => t.assigneeId === currentUserId)
+    } else if (ownerFilter === 'others' && currentUserId) {
+      filtered = filtered.filter(t => t.assigneeId && t.assigneeId !== currentUserId)
+    } else if (ownerFilter === 'department' && currentDepartmentId) {
+      filtered = filtered.filter(t => t.department_id === currentDepartmentId)
+    }
 
     if (dateFilter !== 'all') {
       const today = startOfDayLocal(new Date())
@@ -308,7 +410,7 @@ const GanttPage = () => {
     })
 
     setFilteredTasks(filtered)
-  }, [ganttTasks, debouncedSearchTerm, statusFilter, priorityFilter, dateFilter, sortBy, sortOrder])
+  }, [ganttTasks, debouncedSearchTerm, statusFilter, priorityFilter, dateFilter, ownerFilter, sortBy, sortOrder, profile, user])
 
   // ===== Przygotowanie danych dla Gantta =====
   // Przekazujemy surowe daty - clamp i inclusive robi GanttChart
@@ -352,23 +454,28 @@ const GanttPage = () => {
 
   // Akcje
   const handleTaskClick = (task: GanttItem) => {
-    // nawigacja / szczegóły
-    // console.log(task)
+    if (task?.id) {
+      router.push(`/dashboard/tasks/${task.id}`)
+    }
   }
 
   const handleEditTask = (task: GanttItem) => {
     setEditingTask(task.id)
-    setEditForm(task)
+    setEditForm({
+      ...task,
+      assignee: task.assigneeId ?? UNASSIGNED,
+      assigneeId: task.assigneeId ?? undefined,
+    })
   }
 
   const handleSaveEdit = async () => {
     if (!editingTask) return
     try {
       // mapowanie użytkownika - zamień UNASSIGNED na null
-      const assignedToId = 
-        editForm.assignee && editForm.assignee !== UNASSIGNED
-          ? (editForm.assignee as string)
-          : null
+      const assignedToId =
+        editForm.assigneeId !== undefined
+          ? (editForm.assigneeId === null ? null : editForm.assigneeId)
+          : (editForm.assignee && editForm.assignee !== UNASSIGNED ? (editForm.assignee as string) : null)
 
       // W stanie trzymamy daty jako 12:00 lokalnie (patrz onChange inputów)
       const start = editForm.startDate || null
@@ -547,10 +654,12 @@ const GanttPage = () => {
 
     try {
       // mapowanie użytkownika - zamień UNASSIGNED na null
-      const assignedToId = 
-        newTaskForm.assignee && newTaskForm.assignee !== UNASSIGNED
-          ? (newTaskForm.assignee as string)
-          : null
+      const assignedToId =
+        newTaskForm.assigneeId !== undefined
+          ? (newTaskForm.assigneeId === null ? null : newTaskForm.assigneeId)
+          : (newTaskForm.assignee && newTaskForm.assignee !== UNASSIGNED
+              ? (newTaskForm.assignee as string)
+              : null)
 
       const insertData = {
         title: newTaskForm.title,
@@ -593,6 +702,7 @@ const GanttPage = () => {
           priority: 'medium',
           progress: 0,
           assignee: UNASSIGNED,   // zamiast '' - bezpieczna wartość
+          assigneeId: undefined,
           startDate: new Date(),
           endDate: new Date(new Date().setDate(new Date().getDate() + 7))
         })
@@ -602,9 +712,83 @@ const GanttPage = () => {
     }
   }
 
+  const openPdfExportModal = () => {
+    setPdfStartDate(toDateInputValue(new Date()))
+    setPdfError(null)
+    setShowPdfExportModal(true)
+  }
+
+  const handlePdfDownload = () => {
+    if (!pdfStartDateValue) {
+      setPdfError('Wybierz datę początkową')
+      return
+    }
+
+    if (pdfTasksForExport.length === 0) {
+      setPdfError('Brak zadań w wybranym tygodniu.')
+      return
+    }
+
+    const previewNode = previewRef.current
+    if (!previewNode) {
+      setPdfError('Podgląd nie jest jeszcze gotowy do wydruku.')
+      return
+    }
+
+    setPdfError(null)
+
+    const htmlContent = previewNode.outerHTML.trim()
+    const iframe = document.createElement('iframe')
+    iframe.style.position = 'fixed'
+    iframe.style.top = '0'
+    iframe.style.left = '0'
+    iframe.style.width = '0'
+    iframe.style.height = '0'
+    iframe.style.opacity = '0'
+    iframe.setAttribute('aria-hidden', 'true')
+    iframe.srcdoc = `<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charSet="utf-8" />
+<title>Lista zadań - Wykres Gantta</title>
+<style>${PRINT_STYLES}</style>
+</head>
+<body class="gantt-export-print">${htmlContent}</body>
+</html>`
+
+    const cleanup = () => {
+      iframe.removeEventListener('load', triggerPrint)
+      if (iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe)
+      }
+    }
+
+    const triggerPrint = () => {
+      const printWindow = iframe.contentWindow
+      if (!printWindow) {
+        console.error('Nie udało się uzyskać kontekstu drukowania z iframe')
+        cleanup()
+        return
+      }
+
+      printWindow.focus()
+      printWindow.print()
+      printWindow.addEventListener('afterprint', () => cleanup(), { once: true })
+      printWindow.setTimeout(() => cleanup(), 1500)
+    }
+
+    iframe.addEventListener('load', triggerPrint, { once: true })
+    document.body.appendChild(iframe)
+  }
+
+
   const handleExport = (format: 'pdf' | 'excel') => {
-    console.log(`📤 Eksportuję do ${format.toUpperCase()}`)
-    // Tutaj dodaj logikę eksportu
+    if (format === 'pdf') {
+      openPdfExportModal()
+      return
+    }
+
+    console.log(`📤 Eksport ${format.toUpperCase()} nie jest jeszcze obsługiwany`)
   }
 
   const resetFilters = () => {
@@ -612,6 +796,7 @@ const GanttPage = () => {
     setStatusFilter('all')
     setPriorityFilter('all')
     setDateFilter('all')
+    setOwnerFilter('all')
     setSortBy('startDate')
     setSortOrder('asc')
   }
@@ -732,6 +917,19 @@ const GanttPage = () => {
               <SelectItem value="low">Niskie</SelectItem>
               <SelectItem value="medium">Średnie</SelectItem>
               <SelectItem value="high">Wysokie</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={ownerFilter} onValueChange={(value) => setOwnerFilter(value as OwnerScope)}>
+            <SelectTrigger>
+              <SelectValue placeholder="Zakres" />
+            </SelectTrigger>
+            <SelectContent>
+              {ownerFilterOptions.map(option => (
+                <SelectItem key={option.value} value={option.value} disabled={option.disabled}>
+                  {option.label}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
@@ -1013,8 +1211,20 @@ const GanttPage = () => {
                     <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                       {editingTask === task.id ? (
                         <Select
-                          value={editForm.assignee || task.assignee || UNASSIGNED}
-                          onValueChange={(value) => setEditForm(prev => ({ ...prev, assignee: value }))}
+                          value={
+                            (editForm.assigneeId !== undefined
+                              ? (editForm.assigneeId ?? UNASSIGNED)
+                              : (typeof editForm.assignee === 'string' && editForm.assignee !== ''
+                                  ? editForm.assignee
+                                  : task.assigneeId ?? UNASSIGNED))
+                          }
+                          onValueChange={(value) =>
+                            setEditForm(prev => ({
+                              ...prev,
+                              assignee: value,
+                              assigneeId: value === UNASSIGNED ? undefined : value,
+                            }))
+                          }
                         >
                           <SelectTrigger className="w-40">
                             <SelectValue placeholder="Wybierz osobę" />
@@ -1108,6 +1318,109 @@ const GanttPage = () => {
         </div>
       </div>
 
+      {showPdfExportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6 space-y-4">
+              <h2 className="text-xl font-semibold text-gray-900">Eksport do PDF</h2>
+              <p className="text-sm text-gray-600">Wybierz dzień początkowy. Raport obejmie 7 kolejnych dni.</p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="pdfStartDate">Początek zakresu</label>
+                <Input
+                  id="pdfStartDate"
+                  type="date"
+                  value={pdfStartDate}
+                  onChange={(event) => {
+                    setPdfStartDate(event.target.value)
+                    setPdfError(null)
+                  }}
+                />
+              </div>
+              {pdfError && (
+                <div className="text-sm text-red-600">{pdfError}</div>
+              )}
+              <div className="pt-1">
+                <div className="gantt-preview-styles"><style>{PRINT_STYLES}</style></div>
+                {pdfStartDateValue ? (
+                  pdfTasksForExport.length > 0 ? (
+                    <div className="gantt-export-preview -mx-6">
+                      <div ref={previewRef} className="gantt-export-wrapper">
+                        <div className="gantt-export-root">
+                          <div className="gantt-export-card">
+                            <div className="gantt-export-header">
+                              <h3>Lista zadań - Wykres Gantta</h3>
+                              <p>Zakres: {pdfRangeLabel}</p>
+                            </div>
+                            <div className="gantt-export-meta">
+                              <span><strong>{pdfTasksForExport.length}</strong> zadań</span>
+                              <span><strong>{pdfPreviewDates.length}</strong> dni</span>
+                            </div>
+                            <div className="gantt-export-table-wrapper">
+                              <table className="gantt-export-table">
+                                <thead>
+                                  <tr>
+                                    <th className="gantt-export-col-task">Zadanie</th>
+                                    <th className="gantt-export-col-assignee">Przypisany</th>
+                                    {pdfPreviewDates.map((date) => (
+                                      <th key={date.getTime()} className="gantt-export-date">
+                                        <span>{date.toLocaleDateString('pl-PL', { weekday: 'short' })}</span>
+                                        <span>{date.toLocaleDateString('pl-PL', { day: '2-digit', month: '2-digit' })}</span>
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {pdfTasksForExport.map((task) => (
+                                    <tr key={task.id}>
+                                      <td className="gantt-export-task">{task.title || 'Brak tytułu'}</td>
+                                      <td className="gantt-export-assignee">{task.assignee || 'Brak'}</td>
+                                      {pdfPreviewDates.map((date) => {
+                                        const isActive = task.startDate <= date && task.endDate >= date
+                                        return (
+                                          <td key={`${task.id}-${date.getTime()}`} className="gantt-export-cell">
+                                            {isActive ? (
+                                              <span className="gantt-export-cell-active">X</span>
+                                            ) : (
+                                              <span className="gantt-export-cell-empty">–</span>
+                                            )}
+                                          </td>
+                                        )
+                                      })}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="gantt-export-empty">Brak zadań w wybranym tygodniu. Zmień datę początkową, aby zobaczyć podgląd.</div>
+                  )
+                ) : (
+                  <div className="gantt-export-warning">Wprowadź poprawną datę, aby zobaczyć podgląd.</div>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setShowPdfExportModal(false)
+                    setPdfError(null)
+                  }}
+                >
+                  Anuluj
+                </Button>
+                <Button onClick={handlePdfDownload}>
+                  Pobierz PDF
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal do tworzenia nowego zadania */}
       {showNewTaskModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1198,7 +1511,13 @@ const GanttPage = () => {
                     <label className="block text-sm font-medium text-gray-700 mb-2">Przypisane do</label>
                     <Select
                       value={(newTaskForm.assignee as string) ?? UNASSIGNED}
-                      onValueChange={(value) => setNewTaskForm(prev => ({ ...prev, assignee: value }))}
+                      onValueChange={(value) =>
+                        setNewTaskForm(prev => ({
+                          ...prev,
+                          assignee: value,
+                          assigneeId: value === UNASSIGNED ? undefined : value,
+                        }))
+                      }
                     >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="Wybierz osobę" />

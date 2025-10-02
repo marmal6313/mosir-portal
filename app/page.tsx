@@ -20,8 +20,8 @@ export default function Home() {
       }
     }, 4000)
 
-    supabase.auth.getUser()
-      .then(({ data: { user }, error }) => {
+    supabase.auth.getSession()
+      .then(({ data: { session }, error }) => {
         if (!isMounted) return
         resolved = true
         clearTimeout(fallbackTimer)
@@ -32,6 +32,8 @@ export default function Home() {
           router.replace('/login')
           return
         }
+
+        const user = session?.user
 
         if (user) {
           router.replace('/dashboard')

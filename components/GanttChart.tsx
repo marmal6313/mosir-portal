@@ -13,6 +13,7 @@ export interface GanttItem {
   status: 'new' | 'in_progress' | 'completed' | 'cancelled';
   priority: 'low' | 'medium' | 'high';
   assignee?: string;
+  assigneeId?: string | null;
   description?: string;
   department?: string;
   department_id?: number;
@@ -209,15 +210,19 @@ export const GanttChart: React.FC<GanttChartProps> = ({ items = [], range, onBar
   // ===== Stare funkcje usunięte - teraz używamy CSS Grid placement =====
 
   const handleBarClick = (item: GanttItem) => {
+    if (onBarClick) {
+      onBarClick(item);
+      return;
+    }
+
     if (selectedItem?.id === item.id) {
       // Jeśli klikamy na to samo zadanie, zamknij modal
       handleCloseDetails();
     } else {
       // Otwórz modal z nowym zadaniem - zawsze z aktualnymi danymi z bazy
-      setSelectedItem({...item}); // Kopiujemy item, żeby nie modyfikować oryginału
-      setTempProgress(null); // Resetuj tymczasowy postęp
+      setSelectedItem({ ...item });
+      setTempProgress(null);
     }
-    onBarClick?.(item);
   };
 
   const handleCloseDetails = () => {
@@ -442,10 +447,19 @@ export const GanttChart: React.FC<GanttChartProps> = ({ items = [], range, onBar
             return (
               <div 
                 key={item.id} 
-                className={`grid items-center gap-0 border-b border-gray-100 transition-all duration-200 ${
+                className={`grid items-center gap-0 border-b border-gray-100 transition-all duration-200 cursor-pointer ${
                   hoveredItem === item.id ? 'bg-blue-50' : 'hover:bg-gray-50'
                 } ${selectedItem?.id === item.id ? 'bg-blue-100' : ''}`}
                 style={{ gridTemplateColumns: `240px repeat(${totalDays}, minmax(28px,1fr))` }}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleBarClick(item)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    handleBarClick(item);
+                  }
+                }}
               >
                 {/* kolumna opisowa */}
                 <div className="px-3 py-3 border-r border-gray-100">
@@ -476,7 +490,6 @@ export const GanttChart: React.FC<GanttChartProps> = ({ items = [], range, onBar
                     gridColumn: `${1 + startCol} / span ${span}`,  // +1 bo kolumna 1 to „Zadanie"
                     backgroundColor: getStatusColor(item.status)
                   }}
-                  onClick={() => handleBarClick(item)}
                   onMouseEnter={(e) => handleMouseEnter(item, e)}
                   onMouseLeave={handleMouseLeave}
                   title={`${item.title} (${formatDate(item.startDate)} - ${formatDate(item.endDate)}) - ${item.progress}%`}

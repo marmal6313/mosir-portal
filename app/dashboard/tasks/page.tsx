@@ -33,10 +33,13 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 
 type TaskWithDetails = Database['public']['Views']['tasks_with_details']['Row']
 
+type OwnerScope = 'all' | 'mine' | 'others' | 'department'
+
 type FilterOptions = {
   status: string
   priority: string
   department: string
+  owner: OwnerScope
   showCompleted: boolean
 }
 
@@ -53,6 +56,7 @@ export default function DashboardTaskList() {
     status: 'all',
     priority: 'all',
     department: 'all',
+    owner: 'all',
     showCompleted: true
   })
   const [departments, setDepartments] = useState<string[]>([])
@@ -69,6 +73,7 @@ export default function DashboardTaskList() {
     status: 'all',
     priority: 'all',
     department: 'all',
+    owner: 'all' as OwnerScope,
     showCompleted: true,
     sortBy: 'created_at' as SortOption,
     sortDirection: 'desc' as SortDirection,
@@ -172,9 +177,10 @@ export default function DashboardTaskList() {
     const st = sp.get('st') || 'all'
     const pr = sp.get('pr') || 'all'
     const dept = sp.get('dept') || 'all'
+    const own = (sp.get('own') as OwnerScope) || 'all'
     const show = sp.get('show') !== '0' // domyślnie true
 
-    setFilters({ status: st, priority: pr, department: dept, showCompleted: show })
+    setFilters({ status: st, priority: pr, department: dept, owner: own, showCompleted: show })
 
     // wyszukiwarka
     const q = sp.get('q') || ''
@@ -218,8 +224,15 @@ export default function DashboardTaskList() {
     { value: 'status',     label: 'Status' },
   ]
 
+  const OWNER_FILTER_OPTIONS: { value: OwnerScope; label: string; disabled?: boolean }[] = [
+    { value: 'all', label: 'Wszyscy użytkownicy' },
+    { value: 'mine', label: 'Moje zadania' },
+    { value: 'others', label: 'Innych użytkowników' },
+    { value: 'department', label: 'Mój dział', disabled: !userProfile?.department_id },
+  ]
+
   const resetFilters = () => {
-    setFilters({ status: 'all', priority: 'all', department: 'all', showCompleted: true })
+    setFilters({ status: 'all', priority: 'all', department: 'all', owner: 'all', showCompleted: true })
     setSearchQuery('')
     setSortBy('created_at')
     setSortDirection('desc')
@@ -301,6 +314,14 @@ export default function DashboardTaskList() {
     if (!filters.showCompleted) {
       filtered = filtered.filter(task => task.status !== 'completed')
     }
+
+    if (filters.owner === 'mine' && userProfile?.id) {
+      filtered = filtered.filter(task => task.assigned_to === userProfile.id)
+    } else if (filters.owner === 'others' && userProfile?.id) {
+      filtered = filtered.filter(task => task.assigned_to && task.assigned_to !== userProfile.id)
+    } else if (filters.owner === 'department' && userProfile?.department_id) {
+      filtered = filtered.filter(task => task.department_id === userProfile.department_id)
+    }
     
     // Sortowanie
     filtered.sort((a, b) => {
@@ -331,7 +352,7 @@ export default function DashboardTaskList() {
     })
     
     setFilteredTasks(filtered)
-  }, [tasks, filters, debouncedSearchQuery, sortBy, sortDirection])
+  }, [tasks, filters, debouncedSearchQuery, sortBy, sortDirection, userProfile])
 
   // Zapis do URL gdy stan się zmieni (z użyciem debouncedSearchQuery)
   useEffect(() => {
@@ -342,6 +363,7 @@ export default function DashboardTaskList() {
     if (filters.status !== DEFAULTS.status) params.set('status', filters.status)
     if (filters.priority !== DEFAULTS.priority) params.set('priority', filters.priority)
     if (filters.department !== DEFAULTS.department) params.set('department', filters.department)
+    if (filters.owner !== DEFAULTS.owner) params.set('owner', filters.owner)
     if (filters.showCompleted !== DEFAULTS.showCompleted) params.set('sc', filters.showCompleted ? '1' : '0')
     if (sortBy !== DEFAULTS.sortBy) params.set('sortBy', sortBy)
     if (sortDirection !== DEFAULTS.sortDirection) params.set('sortDir', sortDirection)
@@ -361,6 +383,7 @@ export default function DashboardTaskList() {
     p.set('st', filters.status)
     p.set('pr', filters.priority)
     p.set('dept', filters.department)
+    p.set('own', filters.owner)
     p.set('show', filters.showCompleted ? '1' : '0')
 
     // wyszukiwarka (nie wrzucaj pustego q)
@@ -384,6 +407,7 @@ export default function DashboardTaskList() {
     filters.status,
     filters.priority,
     filters.department,
+    filters.owner,
     filters.showCompleted,
     debouncedSearchQuery,
     sortBy,
@@ -408,6 +432,7 @@ export default function DashboardTaskList() {
       status: sp.get('status') ?? DEFAULTS.status,
       priority: sp.get('priority') ?? DEFAULTS.priority,
       department: sp.get('department') ?? DEFAULTS.department,
+      owner: (sp.get('owner') as OwnerScope) ?? DEFAULTS.owner,
       showCompleted: getBool(sp.get('sc'), DEFAULTS.showCompleted),
       sortBy: (sp.get('sortBy') as SortOption) ?? DEFAULTS.sortBy,
       sortDirection: (sp.get('sortDir') as SortDirection) ?? DEFAULTS.sortDirection,
@@ -419,6 +444,7 @@ export default function DashboardTaskList() {
       status: parsed.status,
       priority: parsed.priority,
       department: parsed.department,
+      owner: parsed.owner,
       showCompleted: parsed.showCompleted
     }))
     setSortBy(parsed.sortBy)
@@ -439,6 +465,11 @@ export default function DashboardTaskList() {
     }
   }
 
+  const isInteractiveElement = (target: EventTarget | null) => {
+    if (!(target instanceof HTMLElement)) return false
+    return Boolean(target.closest('button, a, input, [role="checkbox"], [data-prevent-row-click]'))
+  }
+
   // ===== Komponenty tabeli dla TableVirtuoso =====
   const tableComponents: TableComponents<TaskWithDetails> = {
     Table: (props) => (
@@ -447,7 +478,25 @@ export default function DashboardTaskList() {
       </table>
     ),
     TableHead: (props) => <thead className="bg-gray-50" {...props} />,
-    TableRow: (props) => <tr className="hover:bg-gray-50" {...props} />,
+    TableRow: ({ item, children, ...props }) => (
+      <tr
+        {...props}
+        className="hover:bg-gray-50 cursor-pointer"
+        tabIndex={0}
+        onClick={(event) => {
+          if (isInteractiveElement(event.target)) return
+          handleTaskClick(item.id ?? null)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            handleTaskClick(item.id ?? null)
+          }
+        }}
+      >
+        {children}
+      </tr>
+    ),
     TableBody: (props) => <tbody className="bg-white divide-y divide-gray-200" {...props} />,
   }
 
@@ -685,7 +734,7 @@ export default function DashboardTaskList() {
 
             {/* Filtry (toggle jak teraz) */}
             {showFilters && (
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
                 {/* Status */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
@@ -736,6 +785,30 @@ export default function DashboardTaskList() {
                       <SelectItem value="all">Wszystkie departamenty</SelectItem>
                       {departments.map((dept) => (
                         <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Zakres przypisania */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Zakres</label>
+                  <Select
+                    value={filters.owner}
+                    onValueChange={(v) => setFilters((p) => ({ ...p, owner: v as OwnerScope }))}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Zakres" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OWNER_FILTER_OPTIONS.map((option) => (
+                        <SelectItem
+                          key={option.value}
+                          value={option.value}
+                          disabled={option.disabled}
+                        >
+                          {option.label}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -885,8 +958,10 @@ export default function DashboardTaskList() {
                                   if (checked) selectVisible()
                                   else unselectVisible()
                                 }}
+                                data-prevent-row-click
+                                onClick={(event) => event.stopPropagation()}
                               />
-                            </th>
+                          </th>
 
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Zadanie</th>
                             <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -903,6 +978,8 @@ export default function DashboardTaskList() {
                             <>
                               <td className="px-4 py-4 whitespace-nowrap">
                                 <Checkbox
+                                  data-prevent-row-click
+                                  onClick={(event) => event.stopPropagation()}
                                   checked={checked}
                                   onCheckedChange={(val) => {
                                     setSelectedTasks(prev => {
@@ -939,7 +1016,15 @@ export default function DashboardTaskList() {
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                                 <div className="flex gap-2">
-                                  <Button size="sm" variant="outline" onClick={() => handleTaskClick(task.id)}>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    data-prevent-row-click
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      handleTaskClick(task.id)
+                                    }}
+                                  >
                                     <Eye className="h-4 w-4 mr-2" />
                                     Szczegóły
                                   </Button>
@@ -975,9 +1060,25 @@ export default function DashboardTaskList() {
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
                         {filteredTasks.map((task) => (
-                          <tr key={task.id} className="hover:bg-gray-50">
+                          <tr
+                            key={task.id}
+                            className="hover:bg-gray-50 cursor-pointer"
+                            tabIndex={0}
+                            onClick={(event) => {
+                              if (isInteractiveElement(event.target)) return
+                              handleTaskClick(task.id ?? null)
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault()
+                                handleTaskClick(task.id ?? null)
+                              }
+                            }}
+                          >
                             <td className="px-4 py-4 whitespace-nowrap">
                               <Checkbox
+                                data-prevent-row-click
+                                onClick={(event) => event.stopPropagation()}
                                 checked={selectedTasks.has(task.id || '')}
                                 onCheckedChange={(val) => {
                                   setSelectedTasks(prev => {
@@ -1020,7 +1121,15 @@ export default function DashboardTaskList() {
 
                             <td className="px-4 py-4 whitespace-nowrap text-sm font-medium">
                               <div className="flex gap-2">
-                                <Button size="sm" variant="outline" onClick={() => handleTaskClick(task.id)}>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  data-prevent-row-click
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleTaskClick(task.id)
+                                  }}
+                                >
                                   <Eye className="h-4 w-4 mr-2" />
                                   Szczegóły
                                 </Button>

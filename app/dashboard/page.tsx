@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useAuthContext } from '@/hooks/useAuth'
 import type { Database } from '@/types/database'
@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { 
   Calendar,
   Clock,
@@ -36,6 +37,7 @@ export default function DashboardPage() {
   const router = useRouter()
   const [tasks, setTasks] = useState<TaskWithDetails[]>([])
   const [viewMode, setViewMode] = useState<'list' | 'gantt'>('list')
+  const [hideCompleted, setHideCompleted] = useState(true)
   const [stats, setStats] = useState({
     totalTasks: 0,
     completedTasks: 0,
@@ -44,6 +46,11 @@ export default function DashboardPage() {
   })
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+
+  const visibleTasks = useMemo(() => {
+    if (!hideCompleted) return tasks
+    return tasks.filter((task) => task.status !== 'completed')
+  }, [tasks, hideCompleted])
 
   useEffect(() => {
     if (profile && user) {
@@ -201,42 +208,28 @@ export default function DashboardPage() {
     router.push(`/dashboard/tasks/${taskId}`)
   }
 
-              // Konwersja zadań na format Gantta
-      const ganttItems: GanttItem[] = tasks
-        .filter(task => task.id) // Filtrujemy zadania bez ID (jak w Gantta)
-        .map(task => {
-          const startDate = task.start_date ? new Date(task.start_date) : (task.created_at ? new Date(task.created_at) : new Date())
-          const endDate = task.due_date ? new Date(task.due_date) : new Date(startDate.getTime() + 24 * 60 * 60 * 1000)
-    
-    // Kolor na podstawie statusu i priorytetu
-    let color = '#3B82F6' // domyślny niebieski
-    
-    if (task.status === 'completed') {
-      color = '#10B981' // zielony
-    } else if (task.status === 'in_progress') {
-      if (task.priority === 'high') color = '#EF4444' // czerwony
-      else if (task.priority === 'medium') color = '#F59E0B' // żółty
-      else color = '#3B82F6' // niebieski
-    } else if (task.status === 'new') {
-      if (task.priority === 'high') color = '#6B7280' // szary
-      else if (task.priority === 'medium') color = '#9CA3AF' // jasny szary
-      else color = '#D1D5DB' // bardzo jasny szary
-    }
-    
-    return {
-      id: task.id || '',
-      title: task.title || 'Brak tytułu',
-      startDate,
-      endDate,
-      progress: task.status === 'completed' ? 100 : 
-               task.status === 'in_progress' ? 50 : 0,
-      status: (task.status as 'new' | 'in_progress' | 'completed' | 'cancelled') || 'new',
-      priority: (task.priority as 'low' | 'medium' | 'high') || 'medium',
-      assignee: task.assigned_to_name || undefined,
-      description: task.description || undefined,
-      department: task.department_name || undefined
-    }
-  })
+  const ganttItems: GanttItem[] = useMemo(() => (
+    visibleTasks
+      .filter((task) => task.id)
+      .map((task) => {
+        const startDate = task.start_date ? new Date(task.start_date) : (task.created_at ? new Date(task.created_at) : new Date())
+        const endDate = task.due_date ? new Date(task.due_date) : new Date(startDate.getTime() + 24 * 60 * 60 * 1000)
+
+        return {
+          id: task.id || '',
+          title: task.title || 'Brak tytułu',
+          startDate,
+          endDate,
+          progress: task.status === 'completed' ? 100 :
+                   task.status === 'in_progress' ? 50 : 0,
+          status: (task.status as 'new' | 'in_progress' | 'completed' | 'cancelled') || 'new',
+          priority: (task.priority as 'low' | 'medium' | 'high') || 'medium',
+          assignee: task.assigned_to_name || undefined,
+          description: task.description || undefined,
+          department: task.department_name || undefined,
+        }
+      })
+  ), [visibleTasks])
 
   const handleGanttItemClick = (item: GanttItem) => {
     router.push(`/dashboard/tasks/${item.id}`)
@@ -424,6 +417,17 @@ export default function DashboardPage() {
             </div>
             
             <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-3 py-2 bg-gray-50">
+                <Checkbox
+                  id="dashboard-toggle-hide-completed"
+                  checked={hideCompleted}
+                  onCheckedChange={(checked) => setHideCompleted(checked === true)}
+                />
+                <label htmlFor="dashboard-toggle-hide-completed" className="text-xs sm:text-sm text-gray-700">
+                  Ukryj zakończone
+                </label>
+              </div>
+
               <Button
                 onClick={fetchTasks}
                 variant="outline"
@@ -546,7 +550,7 @@ export default function DashboardPage() {
             <div className="p-4 sm:p-6 border-b border-gray-200">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0">
                 <h3 className="text-base sm:text-lg font-semibold text-gray-900">
-                  Ostatnie zadania ({tasks.length})
+                  Ostatnie zadania ({visibleTasks.length})
                 </h3>
                 <Link href="/dashboard/tasks">
                   <Button variant="outline" size="sm" className="w-full sm:w-auto">
@@ -564,7 +568,7 @@ export default function DashboardPage() {
                   <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
                   <p className="text-gray-600">Ładowanie zadań...</p>
                 </div>
-              ) : tasks.length === 0 ? (
+              ) : visibleTasks.length === 0 ? (
                 <div className="p-8 sm:p-12 text-center">
                   <BarChart3 className="h-12 w-12 text-gray-300 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Brak zadań</h3>
@@ -577,7 +581,7 @@ export default function DashboardPage() {
                   </Link>
                 </div>
               ) : (
-                tasks.slice(0, 10).map((task: TaskWithDetails) => (
+                visibleTasks.slice(0, 10).map((task: TaskWithDetails) => (
                   <div 
                     key={task.id} 
                     className="p-3 sm:p-4 hover:bg-gray-50 transition-colors cursor-pointer group"
@@ -592,14 +596,14 @@ export default function DashboardPage() {
                       
                       {/* Tytuł i podstawowe informacje */}
                       <div className="flex-1 min-w-0">
-                        <h4 className={`text-sm sm:text-base font-medium mb-1 truncate ${
+                        <h4 className={`text-sm sm:text-base font-medium mb-1 line-clamp-2 ${
                           task.status === 'completed' ? 'text-gray-500 line-through' : 'text-gray-900'
                         }`}>
                           {task.title}
                         </h4>
                         
                         {/* Kompaktowe metadane w jednej linii */}
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
                           <span className="flex items-center gap-1">
                             <Building2 className="h-3 w-3" />
                             {task.department_name || 'Brak działu'}

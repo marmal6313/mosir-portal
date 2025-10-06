@@ -7,6 +7,7 @@ import type { Database } from '@/types/database'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { Search, Filter, Plus, Download, RefreshCw } from 'lucide-react'
 import { useAuthContext } from '@/hooks/useAuth'
@@ -139,6 +140,7 @@ const GanttPage = () => {
   const [ownerFilter, setOwnerFilter] = useState<OwnerScope>('all')
   const [sortBy, setSortBy] = useState<string>('startDate')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [hideCompleted, setHideCompleted] = useState(true)
 
   const ownerFilterOptions: { value: OwnerScope; label: string; disabled?: boolean }[] = [
     { value: 'all', label: 'Wszyscy użytkownicy' },
@@ -356,6 +358,10 @@ const GanttPage = () => {
     if (statusFilter !== 'all') filtered = filtered.filter(t => t.status === statusFilter)
     if (priorityFilter !== 'all') filtered = filtered.filter(t => t.priority === priorityFilter)
 
+    if (hideCompleted) {
+      filtered = filtered.filter(t => t.status !== 'completed')
+    }
+
     if (ownerFilter === 'mine' && currentUserId) {
       filtered = filtered.filter(t => t.assigneeId === currentUserId)
     } else if (ownerFilter === 'others' && currentUserId) {
@@ -410,7 +416,7 @@ const GanttPage = () => {
     })
 
     setFilteredTasks(filtered)
-  }, [ganttTasks, debouncedSearchTerm, statusFilter, priorityFilter, dateFilter, ownerFilter, sortBy, sortOrder, profile, user])
+  }, [ganttTasks, debouncedSearchTerm, statusFilter, priorityFilter, dateFilter, ownerFilter, hideCompleted, sortBy, sortOrder, profile, user])
 
   // ===== Przygotowanie danych dla Gantta =====
   // Przekazujemy surowe daty - clamp i inclusive robi GanttChart
@@ -799,6 +805,7 @@ const GanttPage = () => {
     setOwnerFilter('all')
     setSortBy('startDate')
     setSortOrder('asc')
+    setHideCompleted(false)
   }
 
   if (localLoading) {
@@ -919,6 +926,17 @@ const GanttPage = () => {
               <SelectItem value="high">Wysokie</SelectItem>
             </SelectContent>
           </Select>
+
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="hide-completed-gantt"
+              checked={hideCompleted}
+              onCheckedChange={(checked) => setHideCompleted(checked === true)}
+            />
+            <label htmlFor="hide-completed-gantt" className="text-sm text-gray-700">
+              Ukryj zakończone
+            </label>
+          </div>
 
           <Select value={ownerFilter} onValueChange={(value) => setOwnerFilter(value as OwnerScope)}>
             <SelectTrigger>
@@ -1152,8 +1170,8 @@ const GanttPage = () => {
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredTasks.map((task) => (
                   <tr key={task.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
+                    <td className="px-4 py-4 align-top">
+                      <div className="text-sm font-medium text-gray-900 line-clamp-2 max-w-xs sm:max-w-sm">
                         {editingTask === task.id ? (
                           <Input
                             value={editForm.title || task.title}

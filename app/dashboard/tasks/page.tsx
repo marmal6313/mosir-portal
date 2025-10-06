@@ -57,7 +57,7 @@ export default function DashboardTaskList() {
     priority: 'all',
     department: 'all',
     owner: 'all',
-    showCompleted: true
+    showCompleted: false
   })
   const [departments, setDepartments] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState('')
@@ -74,7 +74,7 @@ export default function DashboardTaskList() {
     priority: 'all',
     department: 'all',
     owner: 'all' as OwnerScope,
-    showCompleted: true,
+    showCompleted: false,
     sortBy: 'created_at' as SortOption,
     sortDirection: 'desc' as SortDirection,
     q: '',
@@ -178,7 +178,8 @@ export default function DashboardTaskList() {
     const pr = sp.get('pr') || 'all'
     const dept = sp.get('dept') || 'all'
     const own = (sp.get('own') as OwnerScope) || 'all'
-    const show = sp.get('show') !== '0' // domyślnie true
+    const showParam = sp.get('show')
+    const show = showParam === null ? DEFAULTS.showCompleted : (showParam === '1' || showParam === 'true')
 
     setFilters({ status: st, priority: pr, department: dept, owner: own, showCompleted: show })
 
@@ -232,7 +233,7 @@ export default function DashboardTaskList() {
   ]
 
   const resetFilters = () => {
-    setFilters({ status: 'all', priority: 'all', department: 'all', owner: 'all', showCompleted: true })
+    setFilters({ status: 'all', priority: 'all', department: 'all', owner: 'all', showCompleted: false })
     setSearchQuery('')
     setSortBy('created_at')
     setSortDirection('desc')
@@ -732,9 +733,26 @@ export default function DashboardTaskList() {
               </div>
             </div>
 
+            <div className="mb-4 flex items-center gap-2">
+              <Checkbox
+                id="hideCompleted"
+                checked={!filters.showCompleted}
+                onCheckedChange={(checked) => {
+                  const hide = checked === true
+                  setFilters((prev) => ({
+                    ...prev,
+                    showCompleted: !hide,
+                  }))
+                }}
+              />
+              <label htmlFor="hideCompleted" className="text-sm font-medium text-gray-700">
+                Ukryj zakończone
+              </label>
+            </div>
+
             {/* Filtry (toggle jak teraz) */}
             {showFilters && (
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 {/* Status */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
@@ -812,18 +830,6 @@ export default function DashboardTaskList() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-
-                {/* Pokaż zakończone */}
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="showCompleted"
-                    checked={filters.showCompleted}
-                    onCheckedChange={(checked) => setFilters((p) => ({ ...p, showCompleted: !!checked }))}
-                  />
-                  <label htmlFor="showCompleted" className="text-sm font-medium text-gray-700">
-                    Pokaż zakończone
-                  </label>
                 </div>
               </div>
             )}
@@ -993,10 +999,14 @@ export default function DashboardTaskList() {
                                 />
                               </td>
 
-                              <td className="px-4 py-4 whitespace-nowrap">
-                                <div className="text-sm font-medium text-gray-900">{task.title || 'Brak tytułu'}</div>
+                              <td className="px-4 py-4 align-top">
+                                <div className="text-sm font-medium text-gray-900 line-clamp-2 max-w-xs sm:max-w-sm">
+                                  {task.title || 'Brak tytułu'}
+                                </div>
                                 {task.description && (
-                                  <div className="text-xs text-gray-500 mt-1 line-clamp-2">{task.description}</div>
+                                  <div className="text-xs text-gray-500 mt-1 line-clamp-2 max-w-xs sm:max-w-sm">
+                                    {task.description}
+                                  </div>
                                 )}
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap">
@@ -1092,12 +1102,16 @@ export default function DashboardTaskList() {
                               />
                             </td>
 
-                            <td className="px-4 py-4 whitespace-nowrap">
-                              <div className="text-sm font-medium text-gray-900">{task.title || 'Brak tytułu'}</div>
-                              {task.description && (
-                                <div className="text-xs text-gray-500 mt-1 line-clamp-2">{task.description}</div>
-                              )}
-                            </td>
+                          <td className="px-4 py-4 align-top">
+                            <div className="text-sm font-medium text-gray-900 line-clamp-2 max-w-xs sm:max-w-sm">
+                              {task.title || 'Brak tytułu'}
+                            </div>
+                            {task.description && (
+                              <div className="text-xs text-gray-500 mt-1 line-clamp-2 max-w-xs sm:max-w-sm">
+                                {task.description}
+                              </div>
+                            )}
+                          </td>
 
                             <td className="px-4 py-4 whitespace-nowrap">
                               <Badge className={getStatusColor(task.status)}>{getStatusLabel(task.status)}</Badge>

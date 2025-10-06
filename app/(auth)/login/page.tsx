@@ -90,43 +90,28 @@ export default function Login() {
     setLoading(true)
     setError('')
 
-    let timeoutId: number | undefined
-
     try {
-      const loginResult = await Promise.race([
-        supabase.auth.signInWithPassword({
-          email,
-          password,
-        }),
-        new Promise<never>((_, reject) => {
-          timeoutId = window.setTimeout(() => {
-            reject(new Error('AUTH_TIMEOUT'))
-          }, 8000)
-        }),
-      ])
-
-      const { error: signInError } = loginResult
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
       if (signInError) {
         console.error('Logowanie nie powiodło się:', signInError)
-        setError('Nieprawidłowy email lub hasło')
+        setError(signInError.message || 'Nieprawidłowy email lub hasło')
+        return
+      }
+
+      if (!data?.session) {
+        setError('Nie otrzymano sesji logowania. Spróbuj ponownie.')
         return
       }
 
       router.replace('/dashboard')
     } catch (err) {
-      if ((err as Error).message === 'AUTH_TIMEOUT') {
-        console.error('Logowanie nie odpowiedziało w czasie – prawdopodobne problemy z siecią Supabase')
-        setError('Brak odpowiedzi z serwera uwierzytelniania. Sprawdź połączenie i spróbuj ponownie.')
-        return
-      }
-
       console.error('Wystąpił błąd podczas logowania:', err)
       setError('Wystąpił nieoczekiwany błąd podczas logowania. Spróbuj ponownie lub skontaktuj się z administratorem.')
     } finally {
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId)
-      }
       setLoading(false)
     }
   }

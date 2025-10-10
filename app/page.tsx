@@ -14,9 +14,18 @@ export default function Home() {
 
     const fallbackTimer = setTimeout(() => {
       if (!resolved && isMounted) {
-        console.warn('Auth check timed out, redirecting to /login')
-        setStatusMessage('Nie udało się zweryfikować sesji. Przekierowuję do logowania...')
-        router.replace('/login')
+        console.warn('Auth check timed out, clearing local session and redirecting to /login')
+        setStatusMessage('Sesja wygasła lub jest nieaktualna. Czyszczę dane i przenoszę do logowania...')
+        supabase.auth
+          .signOut({ scope: 'local' })
+          .catch((signOutError) => {
+            console.error('Auth fallback signOut failed:', signOutError)
+          })
+          .finally(() => {
+            if (isMounted) {
+              router.replace('/login')
+            }
+          })
       }
     }, 4000)
 

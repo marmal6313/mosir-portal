@@ -21,11 +21,7 @@ export default function Home() {
           .catch((signOutError) => {
             console.error('Auth fallback signOut failed:', signOutError)
           })
-          .finally(() => {
-            if (isMounted) {
-              router.replace('/login')
-            }
-          })
+        router.replace('/login')
       }
     }, 4000)
 

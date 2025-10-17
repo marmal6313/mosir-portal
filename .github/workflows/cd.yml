@@ -256,6 +256,13 @@ jobs:
             CLOUDFLARE_API_TOKEN_VAL="${{ secrets.CLOUDFLARE_API_TOKEN }}"
             N8N_HOSTNAME_VAL="${{ secrets.N8N_HOSTNAME }}"
             N8N_ENABLED_VAL="${{ secrets.N8N_ENABLED }}"
+            SUPABASE_URL_VAL="${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}"
+            [ -z "$SUPABASE_URL_VAL" ] && SUPABASE_URL_VAL="${{ secrets.SUPABASE_URL }}"
+            SUPABASE_ANON_VAL="${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}"
+            [ -z "$SUPABASE_ANON_VAL" ] && SUPABASE_ANON_VAL="${{ secrets.SUPABASE_ANON_KEY }}"
+            SUPABASE_ROLE_VAL="${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
+            SUPABASE_STORAGE_PUBLIC_VAL="${{ secrets.NEXT_PUBLIC_SUPABASE_STORAGE_KEY }}"
+            SUPABASE_STORAGE_SERVER_VAL="${{ secrets.SUPABASE_STORAGE_KEY }}"
             # Dopisz wartości (ostatnie wystąpienie wygrywa przy wczytywaniu env)
             printf '%s\n' "APP_HOSTNAME=$APP_HOSTNAME_VAL" >> .env
             printf '%s\n' "TRAEFIK_NETWORK=$TRAEFIK_NETWORK_VAL" >> .env
@@ -264,6 +271,13 @@ jobs:
             printf '%s\n' "${CLOUDFLARE_API_TOKEN_VAL:+CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN_VAL}" >> .env
             printf '%s\n' "${N8N_HOSTNAME_VAL:+N8N_HOSTNAME=$N8N_HOSTNAME_VAL}" >> .env
             printf '%s\n' "${N8N_ENABLED_VAL:+N8N_ENABLED=$N8N_ENABLED_VAL}" >> .env
+            printf '%s\n' "${SUPABASE_URL_VAL:+NEXT_PUBLIC_SUPABASE_URL=$SUPABASE_URL_VAL}" >> .env
+            printf '%s\n' "${SUPABASE_URL_VAL:+SUPABASE_URL=$SUPABASE_URL_VAL}" >> .env
+            printf '%s\n' "${SUPABASE_ANON_VAL:+NEXT_PUBLIC_SUPABASE_ANON_KEY=$SUPABASE_ANON_VAL}" >> .env
+            printf '%s\n' "${SUPABASE_ANON_VAL:+SUPABASE_ANON_KEY=$SUPABASE_ANON_VAL}" >> .env
+            printf '%s\n' "${SUPABASE_ROLE_VAL:+SUPABASE_SERVICE_ROLE_KEY=$SUPABASE_ROLE_VAL}" >> .env
+            printf '%s\n' "${SUPABASE_STORAGE_PUBLIC_VAL:+NEXT_PUBLIC_SUPABASE_STORAGE_KEY=$SUPABASE_STORAGE_PUBLIC_VAL}" >> .env
+            printf '%s\n' "${SUPABASE_STORAGE_SERVER_VAL:+SUPABASE_STORAGE_KEY=$SUPABASE_STORAGE_SERVER_VAL}" >> .env
             chmod 600 .env || true
 
             echo "=== Git operations ==="

@@ -68,3 +68,18 @@ services:
       - traefik.http.routers.mosir-web.entrypoints=web
       - traefik.http.routers.mosir-web.middlewares=mosir-https-redirect
       - traefik.http.middlewares.mosir-https-redirect.redirectscheme.scheme=https
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      traefik:
+        condition: service_started
+    networks:
+      - traefik-proxy
+    profiles:
+      - cloudflare

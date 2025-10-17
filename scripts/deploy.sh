@@ -47,6 +47,21 @@ export PROXY_NETWORK="${PROXY_NETWORK:-traefik-proxy}" # zewnętrzna sieć wspó
 export DEPLOY_MODE="${DEPLOY_MODE:-prod}"   # prod | app-only
 export N8N_ENABLED="${N8N_ENABLED:-auto}"   # auto | true | false
 
+if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
+  if [ -n "${COMPOSE_PROFILES:-}" ]; then
+    case ",${COMPOSE_PROFILES}," in
+      *,cloudflare,*) ;;
+      *) export COMPOSE_PROFILES="${COMPOSE_PROFILES},cloudflare" ;;
+    esac
+  else
+    export COMPOSE_PROFILES=cloudflare
+  fi
+else
+  if [ -n "${COMPOSE_PROFILES:-}" ]; then
+    export COMPOSE_PROFILES="$(printf '%s' "${COMPOSE_PROFILES}" | sed 's/,\?cloudflare,\?/ /g' | tr -s ', ' ',' | sed 's/^,//; s/,$//')"
+  fi
+fi
+
 if [ -n "${IMAGE_TAG:-}" ] && [ -z "${IMAGE_REF:-}" ]; then
   # jeżeli podano tylko IMAGE_TAG, spróbuj zbudować IMAGE_REF na bazie obecnego
   # wpisu w compose (zastępując tag po dwukropku)
@@ -68,7 +83,9 @@ if [ "$DEPLOY_MODE" = "app-only" ]; then
 
   # Opcjonalnie uruchom cloudflared, jeśli skonfigurowano token i kontener nie działa
   if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
-    if ! docker ps --format '{{.Names}}' | grep -q '^cloudflared$'; then
+    if [[ ",${COMPOSE_PROFILES:-}," == *",cloudflare,"* ]]; then
+      echo "==> Cloudflared managed via compose profile (app-only mode does not define the service)"
+    elif ! docker ps --format '{{.Names}}' | grep -q '^cloudflared$'; then
       echo "==> Starting cloudflared tunnel"
       dc -f cloudflared.yml --env-file ./.env up -d
     fi
@@ -92,11 +109,15 @@ else
 
   # Uruchom cloudflared w trybie prod, jeśli dostępny token (tunel jako ingress zamiast publicznych portów lub dodatkowo)
   if [ -n "${CLOUDFLARE_TUNNEL_TOKEN:-}" ]; then
-    echo "==> Ensuring external network '$PROXY_NETWORK' exists for cloudflared"
-    docker network inspect "$PROXY_NETWORK" >/dev/null 2>&1 || docker network create "$PROXY_NETWORK"
-    echo "==> Starting/Updating cloudflared tunnel"
-    dc -f cloudflared.yml --env-file ./.env up -d
-    dc -f cloudflared.yml ps || true
+    if [[ ",${COMPOSE_PROFILES:-}," == *",cloudflare,"* ]]; then
+      echo "==> Cloudflared managed via docker-compose.prod.yml (profile: cloudflare)"
+    else
+      echo "==> Ensuring external network '$PROXY_NETWORK' exists for cloudflared"
+      docker network inspect "$PROXY_NETWORK" >/dev/null 2>&1 || docker network create "$PROXY_NETWORK"
+      echo "==> Starting/Updating cloudflared tunnel"
+      dc -f cloudflared.yml --env-file ./.env up -d
+      dc -f cloudflared.yml ps || true
+    fi
   fi
 fi
 

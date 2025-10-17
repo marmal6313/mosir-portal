@@ -257,9 +257,9 @@ jobs:
             N8N_HOSTNAME_VAL="${{ secrets.N8N_HOSTNAME }}"
             N8N_ENABLED_VAL="${{ secrets.N8N_ENABLED }}"
             SUPABASE_URL_VAL="${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}"
-            [ -z "$SUPABASE_URL_VAL" ] && SUPABASE_URL_VAL="${{ secrets.SUPABASE_URL }}"
+            if [ -z "$SUPABASE_URL_VAL" ]; then SUPABASE_URL_VAL="${{ secrets.SUPABASE_URL }}"; fi
             SUPABASE_ANON_VAL="${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}"
-            [ -z "$SUPABASE_ANON_VAL" ] && SUPABASE_ANON_VAL="${{ secrets.SUPABASE_ANON_KEY }}"
+            if [ -z "$SUPABASE_ANON_VAL" ]; then SUPABASE_ANON_VAL="${{ secrets.SUPABASE_ANON_KEY }}"; fi
             SUPABASE_ROLE_VAL="${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
             SUPABASE_STORAGE_PUBLIC_VAL="${{ secrets.NEXT_PUBLIC_SUPABASE_STORAGE_KEY }}"
             SUPABASE_STORAGE_SERVER_VAL="${{ secrets.SUPABASE_STORAGE_KEY }}"

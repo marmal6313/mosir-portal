@@ -104,6 +104,8 @@ else
   dc -f docker-compose.prod.yml pull
 
   echo "==> Starting/Updating stack"
+  # Stop existing services to avoid container name conflicts (e.g. traefik)
+  dc -f docker-compose.prod.yml down --remove-orphans || true
   dc -f docker-compose.prod.yml up -d
   dc -f docker-compose.prod.yml ps || true
 

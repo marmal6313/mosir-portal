@@ -106,6 +106,8 @@ else
   echo "==> Starting/Updating stack"
   # Stop existing services to avoid container name conflicts (e.g. traefik)
   dc -f docker-compose.prod.yml down --remove-orphans || true
+  echo "==> Removing possible leftover containers"
+  docker rm -f traefik mosir-portal-app cloudflared >/dev/null 2>&1 || true
   dc -f docker-compose.prod.yml up -d
   dc -f docker-compose.prod.yml ps || true
 

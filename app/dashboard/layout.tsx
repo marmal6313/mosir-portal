@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useAuthContext } from '@/hooks/useAuth'
 import { Database } from '@/types/database'
 import Sidebar from '@/components/layouts/Sidebar'
@@ -17,6 +17,8 @@ export default function DashboardLayout({
   const { user, profile, loading, authError } = useAuthContext()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const router = useRouter()
+  const pathname = usePathname()
+  const [loadingTimeoutReached, setLoadingTimeoutReached] = useState(false)
 
   useEffect(() => {
     if (!loading && !user) {
@@ -59,7 +61,11 @@ export default function DashboardLayout({
             <div className="absolute inset-0 w-32 h-32 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
           </div>
           <h2 className="mt-6 text-2xl font-bold text-gray-700">Ładowanie MOSiR Portal</h2>
-          <p className="mt-2 text-gray-500">Przygotowujemy Twój dashboard...</p>
+          <p className="mt-2 text-gray-500">
+            {loadingTimeoutReached
+              ? 'Ładowanie trwa dłużej niż zwykle. Przenosimy Cię na listę, aby spróbować ponownie.'
+              : 'Przygotowujemy Twój dashboard...'}
+          </p>
         </div>
       </div>
     )
@@ -96,3 +102,26 @@ export default function DashboardLayout({
     </AuthErrorProvider>
   )
 }
+  useEffect(() => {
+    if (!loading) {
+      setLoadingTimeoutReached(false)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setLoadingTimeoutReached(true)
+    }, 8000)
+
+    return () => window.clearTimeout(timer)
+  }, [loading])
+
+  useEffect(() => {
+    if (!loadingTimeoutReached) return
+
+    const fallbackPath =
+      pathname && pathname.startsWith('/dashboard/tasks/')
+        ? '/dashboard/tasks'
+        : '/dashboard'
+
+    router.replace(fallbackPath)
+  }, [loadingTimeoutReached, pathname, router])

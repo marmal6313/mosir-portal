@@ -388,6 +388,9 @@ FOR SELECT USING (
       SELECT assigned_to FROM public.tasks WHERE id = task_comments.task_id
     )
   )
+  OR
+  -- Autor komentarza zawsze może zobaczyć własny wpis
+  task_comments.user_id = auth.uid()
 );
 
 CREATE POLICY "task_comments_insert_policy" ON public.task_comments

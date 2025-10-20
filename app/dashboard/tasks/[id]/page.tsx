@@ -1,24 +1,31 @@
-import TaskDetails from './TaskDetails';
-import { supabase } from '@/lib/supabase';
+import { notFound } from 'next/navigation'
+import TaskDetails from './TaskDetails'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
+import type { Database } from '@/types/database'
+
+type TaskWithDetailsRow = Database['public']['Views']['tasks_with_details']['Row']
 
 export default async function Page({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const { id } = await params
+  const supabase = await createSupabaseServerClient()
 
-  // Pobierz dane zadania
   const { data: task, error } = await supabase
     .from('tasks_with_details')
     .select('*')
     .eq('id', id)
-    .single();
+    .single()
 
   if (error || !task || !task.id) {
-    return <div className="p-6">Zadanie nie zostało znalezione.</div>;
+    if (error) {
+      console.error(`Nie udało się pobrać zadania ${id}:`, error.message)
+    }
+    return notFound()
   }
 
-  const taskWithId = {
+  const taskWithId: TaskWithDetailsRow & { id: string } = {
     ...task,
-    id: task.id as string
-  };
+    id: task.id as string,
+  }
 
-  return <TaskDetails task={taskWithId} />;
-} 
+  return <TaskDetails task={taskWithId} />
+}

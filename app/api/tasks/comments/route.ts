@@ -16,7 +16,7 @@ type TaskCommentRow = Database['public']['Tables']['task_comments']['Row'] & {
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createSupabaseServerClient(req)
+    const supabase = await createSupabaseServerClient(req)
     const {
       data: { user },
       error: authError,

@@ -4,7 +4,7 @@ import { createClient } from '@supabase/supabase-js'
 import type { NextRequest } from 'next/server'
 import { Database } from '@/types/database'
 
-export function createSupabaseServerClient(req?: NextRequest) {
+export async function createSupabaseServerClient(req?: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
@@ -20,16 +20,18 @@ export function createSupabaseServerClient(req?: NextRequest) {
     })
   }
 
+  const cookieStore = await cookies()
+
   return createServerComponentClient<Database>({
-    cookies: () => cookies()
+    cookies: () => cookieStore,
   }, {
     supabaseUrl,
-    supabaseKey: supabaseAnonKey
+    supabaseKey: supabaseAnonKey,
   })
 }
 
 export async function getCurrentUserWithRole() {
-  const supabase = createSupabaseServerClient()
+  const supabase = await createSupabaseServerClient()
   const { data: { user }, error } = await supabase.auth.getUser()
   if (error || !user) return { user: null, profile: null as any }
 

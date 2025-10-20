@@ -11,7 +11,7 @@ const payloadSchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createSupabaseServerClient(req)
+    const supabase = await createSupabaseServerClient(req)
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

@@ -30,7 +30,7 @@ export default function ResetPassword() {
         setMessage('Email z linkiem do resetowania hasła został wysłany. Sprawdź swoją skrzynkę odbiorczą.')
         setMessageType('success')
       }
-    } catch (error) {
+    } catch {
       setMessage('Wystąpił nieoczekiwany błąd. Spróbuj ponownie.')
       setMessageType('error')
     } finally {
@@ -143,6 +143,5 @@ export default function ResetPassword() {
     </div>
   )
 }
-
 
 

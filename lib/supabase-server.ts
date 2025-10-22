@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers'
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type User } from '@supabase/supabase-js'
 import type { NextRequest } from 'next/server'
 import { Database } from '@/types/database'
 
@@ -30,10 +30,17 @@ export async function createSupabaseServerClient(req?: NextRequest) {
   })
 }
 
-export async function getCurrentUserWithRole() {
+type UserProfileRow = Database['public']['Views']['users_with_details']['Row']
+
+type CurrentUserWithRole = {
+  user: User | null
+  profile: UserProfileRow | null
+}
+
+export async function getCurrentUserWithRole(): Promise<CurrentUserWithRole> {
   const supabase = await createSupabaseServerClient()
   const { data: { user }, error } = await supabase.auth.getUser()
-  if (error || !user) return { user: null, profile: null as any }
+  if (error || !user) return { user: null, profile: null }
 
   const { data: profile, error: profileError } = await supabase
     .from('users_with_details')
@@ -41,7 +48,7 @@ export async function getCurrentUserWithRole() {
     .eq('id', user.id)
     .single()
 
-  if (profileError || !profile) return { user, profile: null as any }
+  if (profileError || !profile) return { user, profile: null }
 
   return { user, profile }
 }

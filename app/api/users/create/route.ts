@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
+import { isUserRole, USER_ROLES, type UserRole } from '@/lib/userRoles'
 
 const payloadSchema = z.object({
   email: z.string().email(),
   first_name: z.string().min(1),
   last_name: z.string().min(1),
   position: z.string().min(1),
-  role: z.enum(['superadmin', 'dyrektor', 'kierownik', 'pracownik']).default('pracownik'),
+  role: z.enum(USER_ROLES).default('pracownik'),
   department_id: z.number().int().optional().nullable(),
   phone: z.string().optional().nullable(),
   whatsapp: z.string().optional().nullable(),
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    const requesterRole = profile?.role as any
+    const requesterRole = isUserRole(profile?.role) ? profile.role : null
     // Only superadmin or roles explicitly allowed to create users via permissions
     // Importing permission config to verify 'users.create'
     const { getRolePermissions } = await import('@/lib/permissions')
@@ -46,15 +47,16 @@ export async function POST(req: NextRequest) {
     const { email, first_name, last_name, position, role, department_id, phone, whatsapp, invite } = parsed.data
 
     // Kierownik może dodawać tylko do własnego działu i tylko rolę pracownik
-    let finalRole = role
+    let finalRole: UserRole = role
     let finalDepartmentId = department_id ?? null
     if (requesterRole === 'kierownik') {
       finalRole = 'pracownik'
       // enforce department to manager's department
       // profile may have department_id in users_with_details view
       // fallback: keep provided department if not available
-      // @ts-ignore
-      finalDepartmentId = (profile?.department_id as number | null) ?? finalDepartmentId
+      const managerDepartmentId =
+        typeof profile?.department_id === 'number' ? profile.department_id : null
+      finalDepartmentId = managerDepartmentId ?? finalDepartmentId
     }
 
     const admin = createSupabaseAdminClient()
@@ -111,7 +113,8 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true, user_id: authUserId, profile: upserted }, { status: 200 })
-  } catch (e: any) {
-    return NextResponse.json({ error: 'Server error', details: e?.message ?? String(e) }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: 'Server error', details: message }, { status: 500 })
   }
 }

@@ -27,8 +27,69 @@ import {
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { USER_ROLES, type UserRole, isUserRole } from '@/lib/userRoles'
 
 type User = Database['public']['Views']['users_with_details']['Row']
+
+type DepartmentOption = { id: number; name: string }
+
+type CreateUserFormState = {
+  email: string
+  first_name: string
+  last_name: string
+  position: string
+  role: UserRole
+  department_id: string
+  phone: string
+  whatsapp: string
+  invite: boolean
+}
+
+type EditUserFormState = {
+  first_name: string
+  last_name: string
+  position: string
+  role: UserRole
+  department_id: string
+  phone: string
+  whatsapp: string
+  active: boolean
+}
+
+type CreateUserPayload = {
+  email: string
+  first_name: string
+  last_name: string
+  position: string
+  role: UserRole
+  department_id?: number | null
+  phone?: string | null
+  whatsapp?: string | null
+  invite: boolean
+}
+
+type UpdateUserPayload = {
+  id: string
+  first_name?: string | null
+  last_name?: string | null
+  position?: string | null
+  role?: UserRole
+  department_id?: number | null
+  phone?: string | null
+  whatsapp?: string | null
+  active?: boolean
+}
+
+const extractErrorMessage = (payload: unknown): string | undefined => {
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>
+    const details = record.details
+    if (typeof details === 'string') return details
+    const error = record.error
+    if (typeof error === 'string') return error
+  }
+  return undefined
+}
 
 export default function UsersPage() {
   const router = useRouter()
@@ -47,26 +108,26 @@ export default function UsersPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [userToDelete, setUserToDelete] = useState<User | null>(null)
   const [deleteActionLoading, setDeleteActionLoading] = useState<'deactivate' | 'hard' | null>(null)
-  const [editForm, setEditForm] = useState({
+  const [editForm, setEditForm] = useState<EditUserFormState>({
     first_name: '',
     last_name: '',
     position: '',
     role: 'pracownik',
-    department_id: '' as string | number,
+    department_id: '',
     phone: '',
     whatsapp: '',
     active: true,
   })
   const [adding, setAdding] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
-  const [deps, setDeps] = useState<Array<{ id: number; name: string }>>([])
-  const [form, setForm] = useState({
+  const [deps, setDeps] = useState<DepartmentOption[]>([])
+  const [form, setForm] = useState<CreateUserFormState>({
     email: '',
     first_name: '',
     last_name: '',
     position: '',
     role: 'pracownik',
-    department_id: '' as string | number,
+    department_id: '',
     phone: '',
     whatsapp: '',
     invite: true,
@@ -156,7 +217,12 @@ export default function UsersPage() {
       await loadUsers()
       // Załaduj departamenty do formularza
       const { data: dpts } = await supabase.from('departments').select('id,name').order('name')
-      if (dpts) setDeps(dpts as any)
+      if (dpts) {
+        const normalizedDepartments = dpts
+          .filter((dept): dept is { id: number; name: string } => !!dept && typeof dept.id === 'number' && typeof dept.name === 'string')
+          .map((dept) => ({ id: dept.id, name: dept.name }))
+        setDeps(normalizedDepartments)
+      }
     } catch (error) {
       console.error('❌ Błąd autoryzacji:', error)
       router.push('/login')
@@ -192,7 +258,6 @@ export default function UsersPage() {
   const uniqueDepartments = [...new Set(users.map(u => u.department_name).filter(Boolean))]
 
   const canCreateUser = isSuperAdmin() || hasPermission('users.create')
-  const canManage = !!userProfile && ['superadmin','dyrektor','kierownik'].includes(userProfile.role as string)
 
   const handleUserRemoval = useCallback(async (mode: 'deactivate' | 'hard') => {
     if (!userToDelete?.id) {
@@ -403,11 +468,16 @@ export default function UsersPage() {
                 <label className="block text-sm font-medium mb-1">Rola</label>
                 <select
                   value={form.role}
-                  onChange={(e)=>setForm({...form, role:e.target.value})}
+                  onChange={(e)=>{
+                    const { value } = e.target
+                    if (isUserRole(value)) {
+                      setForm({...form, role: value})
+                    }
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   disabled={userProfile?.role==='kierownik'}
                 >
-                  {['superadmin','dyrektor','kierownik','pracownik'].map(r=> (
+                  {USER_ROLES.map(r=> (
                     <option key={r} value={r}>{r}</option>
                   ))}
                 </select>
@@ -455,14 +525,28 @@ export default function UsersPage() {
                   }
                   try {
                     setAdding(true)
-                    const payload:any = {
-                      ...form,
-                      department_id: form.department_id ? Number(form.department_id) : undefined,
+                    const payload: CreateUserPayload = {
+                      email: form.email,
+                      first_name: form.first_name,
+                      last_name: form.last_name,
+                      position: form.position,
+                      role: form.role,
+                      invite: form.invite,
                     }
-                    if (userProfile?.role==='kierownik') {
+                    if (form.department_id) {
+                      payload.department_id = Number(form.department_id)
+                    }
+                    if (form.phone) {
+                      payload.phone = form.phone
+                    }
+                    if (form.whatsapp) {
+                      payload.whatsapp = form.whatsapp
+                    }
+                    if (userProfile?.role === 'kierownik') {
                       payload.role = 'pracownik'
-                      // @ts-ignore
-                      if (userProfile?.department_id) payload.department_id = Number(userProfile.department_id)
+                      if (typeof userProfile.department_id === 'number') {
+                        payload.department_id = userProfile.department_id
+                      }
                     }
                     const { data: { session } } = await supabase.auth.getSession()
                     if (!session?.access_token) {
@@ -477,14 +561,19 @@ export default function UsersPage() {
                       },
                       body: JSON.stringify(payload)
                     })
-                    const data = await res.json()
-                    if (!res.ok) throw new Error(data?.details || data?.error || 'Błąd tworzenia użytkownika')
+                    if (!res.ok) {
+                      const data: unknown = await res.json().catch(() => null)
+                      const messageText = extractErrorMessage(data) ?? `Błąd ${res.status}`
+                      throw new Error(messageText)
+                    }
                     setMessage({ type:'success', text: 'Użytkownik dodany' })
                     setForm({ email:'', first_name:'', last_name:'', position:'', role:'pracownik', department_id:'', phone:'', whatsapp:'', invite:true })
                     setAddOpen(false)
                     await loadUsers()
-                  } catch (e:any) {
-                    setMessage({ type:'error', text: e?.message || 'Nie udało się dodać użytkownika' })
+                  } catch (error: unknown) {
+                    const messageText =
+                      error instanceof Error ? error.message : 'Nie udało się dodać użytkownika'
+                    setMessage({ type:'error', text: messageText })
                   } finally {
                     setAdding(false)
                   }
@@ -710,13 +799,13 @@ export default function UsersPage() {
                                   onClick={() => {
                                     setSelectedUser(user)
                                     setEditForm({
-                                      first_name: user.first_name || '',
-                                      last_name: user.last_name || '',
-                                      position: user.position || '',
-                                      role: (user.role as string) || 'pracownik',
-                                      department_id: user.department_id ?? '',
-                                      phone: user.phone || '',
-                                      whatsapp: user.whatsapp || '',
+                                      first_name: user.first_name ?? '',
+                                      last_name: user.last_name ?? '',
+                                      position: user.position ?? '',
+                                      role: isUserRole(user.role) ? user.role : 'pracownik',
+                                      department_id: user.department_id != null ? String(user.department_id) : '',
+                                      phone: user.phone ?? '',
+                                      whatsapp: user.whatsapp ?? '',
                                       active: !!user.active,
                                     })
                                     setEditOpen(true)
@@ -917,10 +1006,15 @@ export default function UsersPage() {
                 <label className="block text-sm font-medium mb-1">Rola</label>
                 <select
                   value={editForm.role}
-                  onChange={(e)=>setEditForm({...editForm, role:e.target.value})}
+                  onChange={(e)=>{
+                    const { value } = e.target
+                    if (isUserRole(value)) {
+                      setEditForm({...editForm, role: value})
+                    }
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {['superadmin','dyrektor','kierownik','pracownik'].map(r=> (
+                  {USER_ROLES.map(r=> (
                     <option key={r} value={r}>{r}</option>
                   ))}
                 </select>
@@ -956,7 +1050,7 @@ export default function UsersPage() {
               <Button
                 onClick={async ()=>{
                   if (!selectedUser) return
-                  const payload:any = {
+                  const payload: UpdateUserPayload = {
                     id: selectedUser.id,
                     first_name: editForm.first_name,
                     last_name: editForm.last_name,
@@ -977,7 +1071,7 @@ export default function UsersPage() {
                     method:'PATCH',
                     headers:{
                       'Content-Type':'application/json',
-                      Authorization: `Bearer ${session.access_token}`,
+                    Authorization: `Bearer ${session.access_token}`,
                     },
                     body: JSON.stringify(payload)
                   })
@@ -986,8 +1080,9 @@ export default function UsersPage() {
                     setEditOpen(false)
                     await loadUsers()
                   } else {
-                    const j = await res.json().catch(()=>({}))
-                    setMessage({ type: 'error', text: 'Błąd aktualizacji: ' + (j?.details || res.status) })
+                    const data: unknown = await res.json().catch(() => null)
+                    const errorMessage = extractErrorMessage(data) ?? `Błąd ${res.status}`
+                    setMessage({ type: 'error', text: `Błąd aktualizacji: ${errorMessage}` })
                   }
                 }}
               >Zapisz zmiany</Button>

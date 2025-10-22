@@ -1,11 +1,10 @@
 export const logger = {
-  debug: (...args: any[]) => {
+  debug: (...args: unknown[]) => {
     if (process.env.NODE_ENV === 'development') console.debug(...args)
   },
-  info: (...args: any[]) => {
+  info: (...args: unknown[]) => {
     if (process.env.NODE_ENV === 'development') console.info(...args)
   },
-  warn: (...args: any[]) => console.warn(...args),
-  error: (...args: any[]) => console.error(...args),
+  warn: (...args: unknown[]) => console.warn(...args),
+  error: (...args: unknown[]) => console.error(...args),
 }
-

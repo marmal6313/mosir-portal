@@ -50,6 +50,30 @@ export default function DashboardLayout({
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  useEffect(() => {
+    if (!loading) {
+      setLoadingTimeoutReached(false)
+      return
+    }
+
+    const timer = window.setTimeout(() => {
+      setLoadingTimeoutReached(true)
+    }, 8000)
+
+    return () => window.clearTimeout(timer)
+  }, [loading])
+
+  useEffect(() => {
+    if (!loadingTimeoutReached) return
+
+    const fallbackPath =
+      pathname && pathname.startsWith('/dashboard/tasks/')
+        ? '/dashboard/tasks'
+        : '/dashboard'
+
+    router.replace(fallbackPath)
+  }, [loadingTimeoutReached, pathname, router])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gradient-to-br from-gray-50 to-blue-50">
@@ -102,26 +126,3 @@ export default function DashboardLayout({
     </AuthErrorProvider>
   )
 }
-  useEffect(() => {
-    if (!loading) {
-      setLoadingTimeoutReached(false)
-      return
-    }
-
-    const timer = window.setTimeout(() => {
-      setLoadingTimeoutReached(true)
-    }, 8000)
-
-    return () => window.clearTimeout(timer)
-  }, [loading])
-
-  useEffect(() => {
-    if (!loadingTimeoutReached) return
-
-    const fallbackPath =
-      pathname && pathname.startsWith('/dashboard/tasks/')
-        ? '/dashboard/tasks'
-        : '/dashboard'
-
-    router.replace(fallbackPath)
-  }, [loadingTimeoutReached, pathname, router])

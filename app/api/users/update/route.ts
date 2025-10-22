@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { createSupabaseAdminClient } from '@/lib/supabase-admin'
+import { isUserRole, USER_ROLES, type UserRole } from '@/lib/userRoles'
 
 const payloadSchema = z.object({
   id: z.string().min(1),
   first_name: z.string().optional().nullable(),
   last_name: z.string().optional().nullable(),
   position: z.string().optional().nullable(),
-  role: z.enum(['superadmin', 'dyrektor', 'kierownik', 'pracownik']).optional(),
+  role: z.enum(USER_ROLES).optional(),
   department_id: z.number().int().nullable().optional(),
   phone: z.string().optional().nullable(),
   whatsapp: z.string().optional().nullable(),
@@ -27,8 +28,9 @@ export async function PATCH(req: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    const requesterRole = requester?.role as any
-    const requesterDeptId = (requester as any)?.department_id as number | null | undefined
+    const requesterRole = isUserRole(requester?.role) ? requester.role : null
+    const requesterDeptId =
+      typeof requester?.department_id === 'number' ? requester.department_id : null
 
     const { getRolePermissions } = await import('@/lib/permissions')
     const rolePerms = requesterRole ? getRolePermissions(requesterRole) : []
@@ -70,7 +72,18 @@ export async function PATCH(req: NextRequest) {
 
     const admin = createSupabaseAdminClient()
 
-    const updates: any = {}
+    type UserUpdateFields = {
+      first_name?: string | null
+      last_name?: string | null
+      position?: string | null
+      phone?: string | null
+      whatsapp?: string | null
+      active?: boolean
+      role?: UserRole
+      department_id?: number | null
+    }
+
+    const updates: UserUpdateFields = {}
     if (first_name !== undefined) updates.first_name = first_name
     if (last_name !== undefined) updates.last_name = last_name
     if (position !== undefined) updates.position = position
@@ -99,7 +112,8 @@ export async function PATCH(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true, profile: updated })
-  } catch (e: any) {
-    return NextResponse.json({ error: 'Server error', details: e?.message ?? String(e) }, { status: 500 })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return NextResponse.json({ error: 'Server error', details: message }, { status: 500 })
   }
 }

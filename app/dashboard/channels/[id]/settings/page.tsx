@@ -353,7 +353,7 @@ export default function ChannelSettingsPage() {
         </Button>
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Ustawienia kanału</h1>
-          <p className="text-sm text-gray-500">Zarządzaj dostępem i członkami kanału "{channel.name}"</p>
+          <p className="text-sm text-gray-500">Zarządzaj dostępem i członkami kanału &quot;{channel.name}&quot;</p>
         </div>
       </div>
 

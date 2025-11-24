@@ -466,6 +466,15 @@ export default function DashboardTaskList() {
     }
   }
 
+  const handleStatusCardClick = (status: FilterOptions['status']) => {
+    setFilters((prev) => ({
+      ...prev,
+      status,
+      // wymuś pokazanie zakończonych, jeśli użytkownik chce je zobaczyć
+      showCompleted: status === 'completed' || status === 'all' ? true : prev.showCompleted,
+    }))
+  }
+
   const isInteractiveElement = (target: EventTarget | null) => {
     if (!(target instanceof HTMLElement)) return false
     return Boolean(target.closest('button, a, input, [role="checkbox"], [data-prevent-row-click]'))
@@ -662,7 +671,11 @@ export default function DashboardTaskList() {
           
           {/* Statystyki */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
-            <div className="bg-blue-50 rounded-lg p-4">
+            <button
+              type="button"
+              onClick={() => handleStatusCardClick('all')}
+              className="bg-blue-50 rounded-lg p-4 text-left hover:shadow-sm transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-300"
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-blue-600">Wszystkie zadania</p>
@@ -670,8 +683,12 @@ export default function DashboardTaskList() {
                 </div>
                 <Target className="h-8 w-8 text-blue-400" />
               </div>
-            </div>
-            <div className="bg-yellow-50 rounded-lg p-4">
+            </button>
+            <button
+              type="button"
+              onClick={() => handleStatusCardClick('in_progress')}
+              className="bg-yellow-50 rounded-lg p-4 text-left hover:shadow-sm transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-yellow-300"
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-yellow-600">W trakcie</p>
@@ -679,8 +696,12 @@ export default function DashboardTaskList() {
                 </div>
                 <PlayCircle className="h-8 w-8 text-yellow-400" />
               </div>
-            </div>
-            <div className="bg-green-50 rounded-lg p-4">
+            </button>
+            <button
+              type="button"
+              onClick={() => handleStatusCardClick('completed')}
+              className="bg-green-50 rounded-lg p-4 text-left hover:shadow-sm transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-green-300"
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-green-600">Zakończone</p>
@@ -688,8 +709,12 @@ export default function DashboardTaskList() {
                 </div>
                 <CheckCircle2 className="h-8 w-8 text-green-400" />
               </div>
-            </div>
-            <div className="bg-purple-50 rounded-lg p-4">
+            </button>
+            <button
+              type="button"
+              onClick={() => handleStatusCardClick('new')}
+              className="bg-purple-50 rounded-lg p-4 text-left hover:shadow-sm transition cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-300"
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-purple-600">Nowe</p>
@@ -697,7 +722,7 @@ export default function DashboardTaskList() {
                 </div>
                 <Circle className="h-8 w-8 text-purple-400" />
               </div>
-            </div>
+            </button>
           </div>
         </div>
 

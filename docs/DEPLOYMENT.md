@@ -1,6 +1,8 @@
 **Cel**
 - Stabilna produkcja, wygodny rozwój, cotygodniowe wydania w poniedziałek, obserwowalność i proste roll‑backi.
 
+**Aktualny release:** `release-250212` (2026-02-12) — multi-department, infra fixes.
+
 **Architektura (obecna produkcja — k3s)**
 - **Aplikacja**: Next.js, pakowana jako obraz Docker (z `Dockerfile`) i uruchamiana w klastrze k3s.
 - **Rejestr obrazów**: GHCR (`ghcr.io/marmal6313/mosir-portal`).
@@ -23,9 +25,25 @@
 
 **Sekwencja wdrożenia (k3s)**
 1) Merge do `main` w tygodniu.
-2) W poniedziałek workflow tworzy tag `release-YYYYMMDD` → build i push obrazu.
-3) Job `deploy` (z akceptacją environments/production) używa `kubectl apply -f k8s/app/` (oraz `k8s/cloudflared.yaml`) przeciwko klastrowi k3s (kubeconfig z sekreta).
-4) Rollback: wybierz poprzedni tag, zbuduj obraz i ponownie zastosuj manifesty (podmień `image` w `k8s/app/deployment.yaml` lub użyj zmiennej/patch w CD).
+2) Utwórz tag `release-YYMMDD` i wypchnij: `git tag release-YYMMDD && git push origin release-YYMMDD`.
+3) GitHub Actions (workflow `CD`) automatycznie buduje obraz Docker i pushuje do GHCR.
+   - Job `deploy` (SSH/Docker Compose) prawdopodobnie zgłosi failure — to oczekiwane, bo produkcja działa na k3s, nie Docker Compose.
+4) Po pomyślnym buildzie zastosuj nowy obraz na klastrze:
+   ```bash
+   kubectl set image deployment/mosir-portal \
+     mosir-portal=ghcr.io/marmal6313/mosir-portal:release-YYMMDD \
+     -n apps
+   kubectl rollout status deployment/mosir-portal -n apps
+   ```
+5) Zaktualizuj tag w manifeście `k8s/app/deployment.yaml` i commitnij:
+   ```bash
+   # edytuj image tag w k8s/app/deployment.yaml
+   git add k8s/app/deployment.yaml
+   git commit -m "chore: bump k8s deployment image to release-YYMMDD"
+   git push origin main
+   ```
+6) Smoke test: `curl -I https://app.e-mosir.pl/api/health` → 200.
+7) Rollback: `kubectl set image deployment/mosir-portal mosir-portal=ghcr.io/marmal6313/mosir-portal:<previous-tag> -n apps`.
 
 **Konfiguracja GitHub (k3s)**
 - Sekrety repo / environment:
@@ -124,3 +142,29 @@
   - Potwierdź działanie `/api/health` lokalnie i na stagingu.
   - Włącz environment `production` z approvable deploy w GitHub.
   - Zweryfikuj CSP: jeżeli obrazy/zasoby są blokowane, dopisz domeny do `ALLOWED_IMAGE_HOSTS` i zbuduj ponownie.
+
+**Migracje SQL (Supabase)**
+- Migracje SQL umieszczamy w katalogu `SQL/` w repo.
+- Przed wdrożeniem nowej wersji aplikacji, która wymaga zmian w bazie, uruchom migrację ręcznie w Supabase SQL Editor.
+- Po migracji uruchom odpowiedni skrypt weryfikacyjny (np. `SQL/verify-*.sql`).
+- Lista migracji:
+  | Plik | Opis | Data |
+  |---|---|---|
+  | `SQL/migration-user-departments.sql` | Tabela `user_departments`, zaktualizowane RLS, widok, funkcja | 2026-02-12 |
+  | `SQL/verify-user-departments-migration.sql` | Weryfikacja poprawności migracji multi-department | 2026-02-12 |
+
+**Funkcjonalność: Multi-department (release-250212)**
+- Użytkownicy mogą być przypisani do wielu działów jednocześnie.
+- Model danych: tabela `user_departments` (junction table) z kolumnami `user_id`, `department_id`, `is_primary`.
+- Kolumna `users.department_id` zachowana dla kompatybilności wstecznej (primary department).
+- Widok `users_with_details` zwraca tablice `department_ids` i `department_names`.
+- Filtrowanie zadań i raportów uwzględnia wszystkie działy użytkownika (role `kierownik`, `pracownik`).
+- UI: multi-checkbox w panelu zarządzania użytkownikami, Badge z nazwami działów w tabeli.
+- API: `POST /api/users/create` i `PUT /api/users/update` przyjmują `department_ids: number[]`.
+- Pliki:
+  - `hooks/useUserDepartments.ts` — hook i helper function
+  - `app/dashboard/tasks/page.tsx` — filtrowanie po wielu działach
+  - `app/dashboard/reports/page.tsx` — agregacja po wielu działach
+  - `app/dashboard/users/page.tsx` — UI multi-select
+  - `app/api/users/create/route.ts`, `app/api/users/update/route.ts` — API
+  - `types/database.ts` — typy TypeScript

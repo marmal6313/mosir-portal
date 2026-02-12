@@ -17,21 +17,28 @@ Krótko: przewidywalne wydania (poniedziałek) i bezpieczny deploy za wspólnym 
 - Poniedziałek: tag `release-YYYYMMDD` z `main` → GHCR build → ręczny approve (environ. `production`) → deploy → smoke test `/api/health`.
 - Rollback: deploy poprzedniego taga.
 
-## TODO (P0–P2)
-- P0 (teraz):
-  - [x] Uruchomić pełny stack (Traefik + app) w sieci `traefik-proxy`.
-  - [x] Smoke test w CD po deploy.
-- P1 (do pierwszego poniedziałku):
+## Zrealizowane
+- [x] Uruchomić pełny stack (Traefik + app) w sieci `traefik-proxy`.
+- [x] Smoke test w CD po deploy.
+- [x] Migracja produkcji z Docker Compose na k3s (namespace `apps`, manifesty `k8s/app`).
+- [x] Cloudflare Tunnel jako Deployment w k3s (`k8s/cloudflared.yaml`).
+- [x] **Multi-department** — użytkownicy mogą być przypisani do wielu działów (`user_departments` junction table, RLS, widok, API, UI). Release `release-250212`.
+- [x] Manifesty K3s w repo (`k8s/app/deployment.yaml`, `service.yaml`, `ingress.yaml`).
+- [x] Supabase keep-alive (`lib/supabase-keep-alive.ts`).
+
+## TODO (P1–P2)
+- P1 (bieżące):
+  - [ ] Zaktualizować pipeline CD, aby automatycznie deploiło na k3s (zamiast Docker Compose SSH).
   - [ ] Build obrazu do GHCR z `main` (tag `staging`).
   - [ ] Ustawić GHCR package na Public (lub dodać login).
-  - [ ] Przełączyć serwer na pełny stack (`deploy/docker-compose.prod.yml`).
-  - [ ] Uptime check + podstawowe logi (docker logs / rotating).
-  - [ ] README DEPLOY dla serwera.
-- P2 (po pierwszym releasie):
+  - [ ] Uptime check + podstawowe logi (kubectl logs / Loki).
+  - [ ] Testy E2E dla multi-department (Playwright / Cypress).
+- P2 (po stabilizacji):
   - [ ] Hardening obrazu: multi-stage, `USER node`, read-only FS, limity.
   - [ ] Metryki/health Traefika, proste alerty.
-  - [ ] Upordządkować ESLint/TS i wyłączyć bypass.
+  - [ ] Upordządkować ESLint/TS i wyłączyć bypass (`eslint.ignoreDuringBuilds`).
   - [ ] (Opcja) Staging auto-deploy z `main`, prod po approve.
+  - [ ] Rozszerzenie `permissions.ts` / `usePermissions.ts` o multi-department scope.
 
 ## Operacyjne skróty
 - Klaster: k3s, kubeconfig z `/etc/rancher/k3s/k3s.yaml` (sekret `KUBECONFIG_B64` w CD).

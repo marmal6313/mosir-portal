@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
         - name: mosir-portal
-          image: ghcr.io/marmal6313/mosir-portal:release-251124
+          image: ghcr.io/marmal6313/mosir-portal:release-250212
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 3000

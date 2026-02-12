@@ -3,9 +3,9 @@
 Krótko: przewidywalne wydania (poniedziałek) i bezpieczny deploy za wspólnym Traefikiem (`traefik-proxy`), opcjonalnie Cloudflare Tunnel.
 
 ## Stan
-- Repo: `main` gotowe; CI (lint/build), CD (tag → GHCR → deploy → smoke test).
-- Infrastrukturа: 1 serwer, Docker; Cloudflare Tunnel z public hostnames.
-- Domena: `app.e-mosir.pl` (CF proxy) + opcjonalnie `n8n.e-mosir.pl`.
+- Repo: `main` gotowe; CI (lint/build), CD (tag → GHCR → deploy do k3s → smoke test).
+- Infrastrukturа: klaster k3s (namespace `apps`) z Traefikiem, cert-managerem (`cloudflare-dns`) i Cloudflare Tunnel (`k8s/cloudflared.yaml`) z public hostnames.
+- Domena: `app.e-mosir.pl` (CF proxy/tunnel) + `n8n.e-mosir.pl` + `dot.e-mosir.pl`.
 - Sentry: usunięte.
 
 ## Build/Runtime
@@ -34,11 +34,9 @@ Krótko: przewidywalne wydania (poniedziałek) i bezpieczny deploy za wspólnym 
   - [ ] (Opcja) Staging auto-deploy z `main`, prod po approve.
 
 ## Operacyjne skróty
-- Sieć proxy: `TRAEFIK_NETWORK=traefik-proxy`.
-- Start (build lokalny):
-  - `docker compose -f deploy/docker-compose.app-build.yml --env-file deploy/.env up -d --build`
-- Po GHCR (prod):
-  - `docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d`
+- Klaster: k3s, kubeconfig z `/etc/rancher/k3s/k3s.yaml` (sekret `KUBECONFIG_B64` w CD).
+- Deploy aplikacji: `kubectl apply -f k8s/app/` (Deployment/Service/Ingress `mosir-portal`).
+- Deploy tunelu: `kubectl apply -f k8s/cloudflared.yaml` (secret `cloudflared-tunnel-token` z `TUNNEL_TOKEN`).
 - Health: `curl -I https://app.e-mosir.pl/api/health` → 200.
 
 ## Ryzyka

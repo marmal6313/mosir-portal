@@ -11,6 +11,7 @@ const payloadSchema = z.object({
   position: z.string().optional().nullable(),
   role: z.enum(USER_ROLES).optional(),
   department_id: z.number().int().nullable().optional(),
+  department_ids: z.array(z.number().int()).optional(),
   phone: z.string().optional().nullable(),
   whatsapp: z.string().optional().nullable(),
   active: z.boolean().optional(),
@@ -43,7 +44,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid payload', details: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { id, first_name, last_name, position, role, department_id, phone, whatsapp, active } = parsed.data
+    const { id, first_name, last_name, position, role, department_id, department_ids, phone, whatsapp, active } = parsed.data
     console.log('users.update: parsed payload', parsed.data)
 
     // Fetch target user to enforce scope/constraints
@@ -109,6 +110,31 @@ export async function PATCH(req: NextRequest) {
     if (error) {
       console.error('users.update: Update failed', error)
       return NextResponse.json({ error: 'Update failed', details: error.message }, { status: 400 })
+    }
+
+    // Aktualizuj powiązania z działami w user_departments
+    if (department_ids !== undefined) {
+      // Usuń istniejące powiązania
+      await admin.from('user_departments').delete().eq('user_id', id)
+
+      if (department_ids.length > 0) {
+        const deptRows = department_ids.map((deptId, index) => ({
+          user_id: id,
+          department_id: deptId,
+          is_primary: index === 0,
+        }))
+
+        const { error: deptError } = await admin.from('user_departments').insert(deptRows)
+        if (deptError) {
+          console.error('users.update: user_departments update failed', deptError)
+          // Nie zwracamy błędu - profil został zaktualizowany
+        }
+      }
+
+      // Ustaw primary department_id w users
+      if (department_ids.length > 0) {
+        await admin.from('users').update({ department_id: department_ids[0] }).eq('id', id)
+      }
     }
 
     return NextResponse.json({ ok: true, profile: updated })

@@ -1,72 +1,48 @@
 **Cel**
 - Stabilna produkcja, wygodny rozwój, cotygodniowe wydania w poniedziałek, obserwowalność i proste roll‑backi.
 
-**Architektura**
-- **Aplikacja**: Next.js w Docker (już gotowe: `Dockerfile`).
+**Architektura (obecna produkcja — k3s)**
+- **Aplikacja**: Next.js, pakowana jako obraz Docker (z `Dockerfile`) i uruchamiana w klastrze k3s.
 - **Rejestr obrazów**: GHCR (`ghcr.io/marmal6313/mosir-portal`).
-- **Serwer**: 1 VM (Docker) z `deploy/docker-compose.prod.yml` (Traefik + app).
-- **TLS/Proxy**: Traefik + Let’s Encrypt (DNS‑01 z Cloudflare, wspiera “pomarańczową chmurkę”).
+- **Klaster**: k3s, namespace `apps`, Deployment `mosir-portal`, Service `mosir-portal`, Ingress `mosir-portal` (Traefik, `ingressClassName: traefik`); manifesty w `k8s/app`.
+- **Ruch zewnętrzny**: Cloudflare (proxy / Tunnel) → Traefik w k3s → Ingress `mosir-portal` → Service `mosir-portal` → Pod(y) aplikacji.
+- **TLS/Proxy**: cert-manager + `ClusterIssuer cloudflare-dns` (ACME DNS‑01 z Cloudflare), cert w secrete `mosir-portal-tls`.
 - **Monitoring/errory**: healthcheck `GET /api/health`.
 - **DB/Backend**: Supabase (zarządzane) — zmienne środowiskowe.
 
-**Środowiska i release**
-- **main**: stabilny kod. Tag `release-YYYYMMDD` — produkcja.
-- **PR/feature**: CI (lint, build).
-- **Staging (opcjonalnie)**: push do `main` buduje obraz `:staging` i wdraża na `staging` host.
+**Architektura (wariant legacy — 1 VM Docker)**
+- Wcześniejsza wersja produkcji opierała się na jednym serwerze z Dockerem i Traefikiem
+  (`deploy/docker-compose.prod.yml`, `scripts/deploy.sh`, dokument `DEPLOY.md`). Ten wariant
+  można traktować jako fallback lub środowisko testowe; obecnie nie jest głównym sposobem
+  uruchamiania produkcji.
 
-**Sekwencja wdrożenia**
+**Środowiska i release**
+- **main**: stabilny kod. Tag `release-YYYYMMDD` — produkcja (obraz GHCR wdrażany do klastrа k3s).
+- **PR/feature**: CI (lint, build).
+- **Staging (opcjonalnie)**: oddzielny namespace / cluster-context, te same manifesty `k8s/app` i `k8s/cloudflared.yaml`.
+
+**Sekwencja wdrożenia (k3s)**
 1) Merge do `main` w tygodniu.
 2) W poniedziałek workflow tworzy tag `release-YYYYMMDD` → build i push obrazu.
-3) Job `deploy` (z akceptacją environments/production) łączy się przez SSH i wykonuje `scripts/deploy.sh` na serwerze.
-4) Rollback: wybierz poprzedni tag i ponownie uruchom `deploy` z tym tagiem.
+3) Job `deploy` (z akceptacją environments/production) używa `kubectl apply -f k8s/app/` (oraz `k8s/cloudflared.yaml`) przeciwko klastrowi k3s (kubeconfig z sekreta).
+4) Rollback: wybierz poprzedni tag, zbuduj obraz i ponownie zastosuj manifesty (podmień `image` w `k8s/app/deployment.yaml` lub użyj zmiennej/patch w CD).
 
-**Konfiguracja GitHub**
-- Ustaw sekrety repo:
-  - `GHCR_PAT` (opcjonalnie, zwykle wystarczy `GITHUB_TOKEN` z uprawnieniami packages:write)
-  - `SSH_HOST`, `SSH_USER`, `SSH_KEY` (private key), `SSH_KNOWN_HOSTS`, `APP_PATH` (np. `/opt/mosir-portal`)
-- `APP_HOSTNAME` (np. `app.e-mosir.pl`) — można też trzymać na serwerze w `.env`
-- W Settings → Environments dodaj `production` i włącz manualne approvals.
+**Konfiguracja GitHub (k3s)**
+- Sekrety repo / environment:
+  - `GHCR_PAT` lub `GITHUB_TOKEN` z `packages:write` (push obrazu).
+  - `KUBECONFIG_B64` — kubeconfig dla klastra k3s (zakodowany base64, zwykle `/etc/rancher/k3s/k3s.yaml`).
+- Opcjonalnie: `APP_HOSTNAME=app.e-mosir.pl`, `N8N_HOSTNAME=n8n.e-mosir.pl`, jeśli workflow ma generować Ingress/Tunnel.
 
-**Serwer produkcyjny**
-1) Zainstaluj Docker + plugin compose.
-2) Na serwerze: `sudo mkdir -p /opt/mosir-portal && sudo chown -R $USER: /opt/mosir-portal`
-3) Skopiuj (pierwszy raz): katalog `deploy/` i `scripts/deploy.sh` do `/opt/mosir-portal`.
-4) Utwórz plik env w katalogu `deploy` na serwerze:
-   - `cp deploy/.env.example deploy/.env` i uzupełnij wartości
-   - Lokalizacja finalna: `/opt/mosir-portal/deploy/.env`
-   - `APP_HOSTNAME=app.e-mosir.pl`
-   - `IMAGE_REF=ghcr.io/marmal6313/mosir-portal:release-YYYYMMDD` (lub podaj tag przy deployu)
-   - `NEXT_PUBLIC_SUPABASE_URL=...`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY=...`
-   - `SUPABASE_SERVICE_ROLE_KEY=...`
-   - `LETSENCRYPT_EMAIL=admin@e-mosir.pl`
-   - `CLOUDFLARE_API_TOKEN=<token_z_CF>` (DNS‑01; patrz sekcja “Cloudflare proxy”)
-5) Pierwsze uruchomienie (ręcznie na serwerze): `bash scripts/deploy.sh`.
-
-**Cotygodniowy release**
-- Workflow `.github/workflows/release-weekly.yml` tworzy tag `release-YYYYMMDD` w poniedziałek 06:00 UTC → startuje build/push → environment `production` wymaga zatwierdzenia, po czym robi SSH deploy.
-
- 
-
-**Rollback**
-- Uruchom deploy z wcześniejszym tagiem: `IMAGE_TAG=release-YYYYMMDD bash scripts/deploy.sh`.
-
-**Cloudflare proxy (pomarańczowa chmurka)**
-- W Cloudflare ustaw rekord `app.e-mosir.pl` na “Proxied”.
-- Utwórz token API tylko dla strefy `e-mosir.pl` z uprawnieniami: `Zone → DNS → Edit` (plus `Zone → Zone → Read`).
-- W `deploy/.env` ustaw `CLOUDFLARE_API_TOKEN=...`.
-- Traefik jest już skonfigurowany na Let’s Encrypt DNS‑01 (nie wymaga otwartego 80 dla ACME).
-- W panelu Cloudflare włącz “SSL/TLS → Full (strict)”.
-
-**Wspólna sieć reverse proxy**
-- Używamy zewnętrznej sieci Docker `traefik-proxy`, aby podpiąć inne usługi (np. n8n) bez koegzystencji w tym samym compose.
-- Jednorazowo na serwerze: `docker network create traefik-proxy` (skrypt deploy tworzy ją automatycznie, jeśli brak).
-- Traefik i aplikacja łączą się do `traefik-proxy` (zdefiniowane w `deploy/docker-compose.prod.yml`).
-
-**Reverse proxy (Traefik)**
-- Domyślnie uruchamiamy własny Traefik z `deploy/docker-compose.prod.yml` (TLS przez Let’s Encrypt DNS‑01 + Cloudflare).
-- Inne usługi (np. n8n) dołącz do sieci `traefik-proxy` i skonfiguruj etykiety Traefika (patrz sekcja n8n niżej).
-- Wariant „app‑only” (z Twoim Traefikiem) jest opcjonalny/zaawansowany i nie jest rekomendowany jako default.
+**Cloudflare / ingress (k3s)**
+- DNS:
+  - wariant A/AAAA: `app.e-mosir.pl` i `n8n.e-mosir.pl` → IP nodów k3s (proxied), Traefik + cert-manager (`cloudflare-dns`) wystawiają certy.
+  - wariant Tunnel (obecny): rekord CNAME `app`/`n8n` → `<UUID>.cfargotunnel.com`, tunel w `apps` (`k8s/cloudflared.yaml`) z hostnames:
+    - `app.e-mosir.pl` → `http://mosir-portal.apps.svc.cluster.local:80`
+    - `n8n.e-mosir.pl` → `http://n8n.apps.svc.cluster.local:5678`
+    - `dot.e-mosir.pl` → `http://dotacje-app.apps.svc.cluster.local:3000`
+- TLS:
+  - dla wariantu Tunnel: TLS terminowany w Cloudflare, origin HTTP w sieci klastra.
+  - dla wariantu A/AAAA: TLS terminowany w Traefiku (cert-manager `cloudflare-dns`).
 
 **Pierwsze wdrożenie bez GHCR (lokalny build)**
 - Gdy obraz nie jest jeszcze opublikowany w GHCR, użyj: `deploy/docker-compose.app-build.yml` (uruchamia tylko app na porcie 3000 lokalnie/stagingowo).

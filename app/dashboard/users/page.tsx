@@ -28,6 +28,7 @@ import {
 import { useRouter } from 'next/navigation'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { USER_ROLES, type UserRole, isUserRole } from '@/lib/userRoles'
+import { Checkbox } from '@/components/ui/checkbox'
 
 type User = Database['public']['Views']['users_with_details']['Row']
 
@@ -40,6 +41,7 @@ type CreateUserFormState = {
   position: string
   role: UserRole
   department_id: string
+  department_ids: number[]
   phone: string
   whatsapp: string
   invite: boolean
@@ -51,6 +53,7 @@ type EditUserFormState = {
   position: string
   role: UserRole
   department_id: string
+  department_ids: number[]
   phone: string
   whatsapp: string
   active: boolean
@@ -63,6 +66,7 @@ type CreateUserPayload = {
   position: string
   role: UserRole
   department_id?: number | null
+  department_ids?: number[]
   phone?: string | null
   whatsapp?: string | null
   invite: boolean
@@ -75,6 +79,7 @@ type UpdateUserPayload = {
   position?: string | null
   role?: UserRole
   department_id?: number | null
+  department_ids?: number[]
   phone?: string | null
   whatsapp?: string | null
   active?: boolean
@@ -114,6 +119,7 @@ export default function UsersPage() {
     position: '',
     role: 'pracownik',
     department_id: '',
+    department_ids: [],
     phone: '',
     whatsapp: '',
     active: true,
@@ -128,6 +134,7 @@ export default function UsersPage() {
     position: '',
     role: 'pracownik',
     department_id: '',
+    department_ids: [],
     phone: '',
     whatsapp: '',
     invite: true,
@@ -482,19 +489,42 @@ export default function UsersPage() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Departament</label>
-                <select
-                  value={String(form.department_id ?? '')}
-                  onChange={(e)=>setForm({...form, department_id: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  disabled={userProfile?.role==='kierownik'}
-                >
-                  <option value="">— wybierz —</option>
-                  {deps.map(d=> (
-                    <option key={d.id} value={String(d.id)}>{d.name}</option>
-                  ))}
-                </select>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">Działy (wielokrotny wybór)</label>
+                <div className="grid grid-cols-2 gap-2 p-3 border border-gray-300 rounded-md max-h-40 overflow-y-auto">
+                  {deps.map(d => {
+                    const checked = form.department_ids.includes(d.id)
+                    return (
+                      <label key={d.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                        <Checkbox
+                          checked={checked}
+                          disabled={userProfile?.role === 'kierownik'}
+                          onCheckedChange={(val) => {
+                            if (val) {
+                              const newIds = [...form.department_ids, d.id]
+                              setForm({
+                                ...form,
+                                department_ids: newIds,
+                                department_id: form.department_id || String(d.id),
+                              })
+                            } else {
+                              const newIds = form.department_ids.filter(id => id !== d.id)
+                              setForm({
+                                ...form,
+                                department_ids: newIds,
+                                department_id: newIds.length > 0 ? String(newIds[0]) : '',
+                              })
+                            }
+                          }}
+                        />
+                        <span className="text-sm">{d.name}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+                {form.department_ids.length === 0 && (
+                  <p className="text-xs text-gray-500 mt-1">Zaznacz co najmniej jeden dział</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Telefon</label>
@@ -533,8 +563,13 @@ export default function UsersPage() {
                       role: form.role,
                       invite: form.invite,
                     }
-                    if (form.department_id) {
+                    // Ustaw primary department (pierwszy z listy lub wybrany)
+                    if (form.department_ids.length > 0) {
+                      payload.department_id = form.department_ids[0]
+                      payload.department_ids = form.department_ids
+                    } else if (form.department_id) {
                       payload.department_id = Number(form.department_id)
+                      payload.department_ids = [Number(form.department_id)]
                     }
                     if (form.phone) {
                       payload.phone = form.phone
@@ -567,7 +602,7 @@ export default function UsersPage() {
                       throw new Error(messageText)
                     }
                     setMessage({ type:'success', text: 'Użytkownik dodany' })
-                    setForm({ email:'', first_name:'', last_name:'', position:'', role:'pracownik', department_id:'', phone:'', whatsapp:'', invite:true })
+                    setForm({ email:'', first_name:'', last_name:'', position:'', role:'pracownik', department_id:'', department_ids:[], phone:'', whatsapp:'', invite:true })
                     setAddOpen(false)
                     await loadUsers()
                   } catch (error: unknown) {
@@ -766,7 +801,17 @@ export default function UsersPage() {
                           <span className="text-gray-700">{user.position || '-'}</span>
                         </td>
                         <td className="py-3 px-4">
-                          <span className="text-gray-700">{user.department_name || '-'}</span>
+                          {user.department_names && user.department_names.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {user.department_names.map((name: string) => (
+                                <Badge key={name} variant="outline" className="text-xs">
+                                  {name}
+                                </Badge>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-gray-700">{user.department_name || '-'}</span>
+                          )}
                         </td>
                         <td className="py-3 px-4">
                           <Badge variant={getRoleBadgeVariant(user.role)}>
@@ -796,14 +841,21 @@ export default function UsersPage() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => {
+                                  onClick={async () => {
                                     setSelectedUser(user)
+                                    // Pobierz department_ids użytkownika
+                                    const { data: userDepts } = await supabase
+                                      .from('user_departments')
+                                      .select('department_id')
+                                      .eq('user_id', user.id!)
+                                    const deptIds = userDepts?.map(d => d.department_id) || []
                                     setEditForm({
                                       first_name: user.first_name ?? '',
                                       last_name: user.last_name ?? '',
                                       position: user.position ?? '',
                                       role: isUserRole(user.role) ? user.role : 'pracownik',
                                       department_id: user.department_id != null ? String(user.department_id) : '',
+                                      department_ids: deptIds,
                                       phone: user.phone ?? '',
                                       whatsapp: user.whatsapp ?? '',
                                       active: !!user.active,
@@ -935,8 +987,12 @@ export default function UsersPage() {
                       <span className="text-gray-900">{selectedUser.position || '-'}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Departament:</span>
-                      <span className="text-gray-900">{selectedUser.department_name || '-'}</span>
+                      <span className="text-gray-600">Działy:</span>
+                      <span className="text-gray-900">
+                        {selectedUser.department_names && selectedUser.department_names.length > 0
+                          ? selectedUser.department_names.join(', ')
+                          : selectedUser.department_name || '-'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -1019,18 +1075,38 @@ export default function UsersPage() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Departament</label>
-                <select
-                  value={String(editForm.department_id ?? '')}
-                  onChange={(e)=>setEditForm({...editForm, department_id: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">— wybierz —</option>
-                  {deps.map(d=> (
-                    <option key={d.id} value={String(d.id)}>{d.name}</option>
-                  ))}
-                </select>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">Działy (wielokrotny wybór)</label>
+                <div className="grid grid-cols-2 gap-2 p-3 border border-gray-300 rounded-md max-h-40 overflow-y-auto">
+                  {deps.map(d => {
+                    const checked = editForm.department_ids.includes(d.id)
+                    return (
+                      <label key={d.id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-1 rounded">
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(val) => {
+                            if (val) {
+                              const newIds = [...editForm.department_ids, d.id]
+                              setEditForm({
+                                ...editForm,
+                                department_ids: newIds,
+                                department_id: editForm.department_id || String(d.id),
+                              })
+                            } else {
+                              const newIds = editForm.department_ids.filter(id => id !== d.id)
+                              setEditForm({
+                                ...editForm,
+                                department_ids: newIds,
+                                department_id: newIds.length > 0 ? String(newIds[0]) : '',
+                              })
+                            }
+                          }}
+                        />
+                        <span className="text-sm">{d.name}</span>
+                      </label>
+                    )
+                  })}
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">Telefon</label>
@@ -1049,14 +1125,15 @@ export default function UsersPage() {
               <Button variant="outline" onClick={()=>setEditOpen(false)}>Anuluj</Button>
               <Button
                 onClick={async ()=>{
-                  if (!selectedUser) return
+                  if (!selectedUser?.id) return
                   const payload: UpdateUserPayload = {
                     id: selectedUser.id,
                     first_name: editForm.first_name,
                     last_name: editForm.last_name,
                     position: editForm.position,
                     role: editForm.role,
-                    department_id: editForm.department_id === '' ? null : Number(editForm.department_id),
+                    department_id: editForm.department_ids.length > 0 ? editForm.department_ids[0] : (editForm.department_id === '' ? null : Number(editForm.department_id)),
+                    department_ids: editForm.department_ids,
                     phone: editForm.phone || null,
                     whatsapp: editForm.whatsapp || null,
                     active: editForm.active,

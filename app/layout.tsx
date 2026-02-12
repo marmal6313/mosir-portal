@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { NotificationManager } from "@/components/notifications/NotificationManager";
 import { AuthProvider } from "@/hooks/useAuth";
+import "@/lib/supabase-keep-alive";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

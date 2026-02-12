@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mosir-portal
+  namespace: apps
+  labels:
+    app: mosir-portal
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mosir-portal
+  template:
+    metadata:
+      labels:
+        app: mosir-portal
+    spec:
+      containers:
+        - name: mosir-portal
+          image: ghcr.io/marmal6313/mosir-portal:release-251124
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+              name: http
+          env:
+            - name: NODE_ENV
+              value: "production"
+            - name: PORT
+              value: "3000"
+          envFrom:
+            - secretRef:
+                name: mosir-portal-env
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+      terminationGracePeriodSeconds: 30

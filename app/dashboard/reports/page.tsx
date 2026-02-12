@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useAuthContext } from '@/hooks/useAuth'
 import { supabase } from '@/lib/supabase'
+import { fetchUserDepartmentIds } from '@/hooks/useUserDepartments'
 import { 
   BarChart3, 
   TrendingUp, 
@@ -109,23 +110,16 @@ export default function ReportsPage() {
         .from('tasks')
         .select('*')
 
-      // Filtruj po działach dla kierowników - pobierz department_id z tabeli users
+      // Filtruj po działach dla kierowników - multi-department
       if (profile?.role === 'kierownik' && profile.id) {
         try {
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('department_id')
-            .eq('id', profile.id)
-            .single()
-          
-          if (userError) {
-            console.error('❌ Błąd podczas pobierania department_id:', userError)
-          } else if (userData?.department_id) {
-            console.log('🔍 Filtruję po dział:', userData.department_id)
-            query = query.eq('department_id', userData.department_id)
+          const deptIds = await fetchUserDepartmentIds(profile.id)
+          if (deptIds.length > 0) {
+            console.log('🔍 Filtruję po działy:', deptIds)
+            query = query.in('department_id', deptIds)
           }
         } catch (error) {
-          console.error('❌ Błąd podczas pobierania department_id:', error)
+          console.error('❌ Błąd podczas pobierania department_ids:', error)
         }
       }
 
@@ -168,23 +162,16 @@ export default function ReportsPage() {
           departments!inner(name)
         `)
 
-      // Filtruj po działach dla kierowników - pobierz department_id z tabeli users
+      // Filtruj po działach dla kierowników - multi-department
       if (profile?.role === 'kierownik' && profile.id) {
         try {
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('department_id')
-            .eq('id', profile.id)
-            .single()
-          
-          if (userError) {
-            console.error('❌ Błąd podczas pobierania department_id:', userError)
-          } else if (userData?.department_id) {
-            console.log('🔍 Filtruję po dział:', userData.department_id)
-            query = query.eq('department_id', userData.department_id)
+          const deptIds = await fetchUserDepartmentIds(profile.id)
+          if (deptIds.length > 0) {
+            console.log('🔍 Filtruję po działy:', deptIds)
+            query = query.in('department_id', deptIds)
           }
         } catch (error) {
-          console.error('❌ Błąd podczas pobierania department_id:', error)
+          console.error('❌ Błąd podczas pobierania department_ids:', error)
         }
       }
 
@@ -232,23 +219,16 @@ export default function ReportsPage() {
           assigned_user:users!assigned_to(first_name, last_name)
         `)
 
-      // Filtruj po działach dla kierowników - pobierz department_id z tabeli users
+      // Filtruj po działach dla kierowników - multi-department
       if (profile?.role === 'kierownik' && profile.id) {
         try {
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('department_id')
-            .eq('id', profile.id)
-            .single()
-          
-          if (userError) {
-            console.error('❌ Błąd podczas pobierania department_id:', userError)
-          } else if (userData?.department_id) {
-            console.log('🔍 Filtruję po dział:', userData.department_id)
-            query = query.eq('department_id', userData.department_id)
+          const deptIds = await fetchUserDepartmentIds(profile.id)
+          if (deptIds.length > 0) {
+            console.log('🔍 Filtruję po działy:', deptIds)
+            query = query.in('department_id', deptIds)
           }
         } catch (error) {
-          console.error('❌ Błąd podczas pobierania department_id:', error)
+          console.error('❌ Błąd podczas pobierania department_ids:', error)
         }
       }
 

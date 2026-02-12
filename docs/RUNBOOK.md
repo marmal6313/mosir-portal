@@ -6,12 +6,20 @@ sidebar_position: 10
 
 Ten runbook opisuje architekturę, cotygodniowe wydania, diagnostykę i recovery. Napisany tak, aby człowiek i asystent AI mogli go wykonać krok‑po‑kroku.
 
+> Uwaga: obecnie główne środowisko produkcyjne MOSiR Portal działa w klastrze k3s
+> (namespace `apps`, Deployment/Service/Ingress `mosir-portal` opisane w `k8s/app` i
+> `k8s/README.md`). Poniższa sekcja „Architektura” opisuje historyczny wariant single‑VM
+> na Dockerze (Traefik + app + cloudflared). W praktyce:
+> - do diagnostyki produkcji używaj głównie `kubectl` (`kubectl -n apps get deploy,svc,ingress`),
+> - komendy `docker ...` dotyczą legacy‑stacka i ewentualnego fallbacku.
+
 ## Architektura
-- Reverse proxy: Traefik (Docker), wspólna sieć `traefik-proxy`.
-- Aplikacja: `mosir-portal-app` (Next.js) za Traefikiem.
+- Środowisko produkcyjne: klaster k3s, namespace `apps`, Traefik Ingress (`ingressClassName: traefik`), cert-manager (`ClusterIssuer cloudflare-dns`), manifesty w `k8s/app`.
+- Reverse proxy (legacy): Traefik w Dockerze, wspólna sieć `traefik-proxy`.
+- Aplikacja (legacy): `mosir-portal-app` (Next.js) za Traefikiem.
 - Automatyzacje: `n8n` za Traefikiem (i przez Cloudflare Tunnel).
-- Cloudflare Tunnel: kontener `cloudflared` w sieci `traefik-proxy`, Public Hostnames:
-  - `app.e-mosir.pl` → `http://mosir-portal-app:3000`
+- Cloudflare Tunnel: kontener `cloudflared` z publicznymi hostami:
+  - `app.e-mosir.pl` → (aktualnie) Traefik/k3s (`http://<IP noda k3s>:80`) lub historycznie `http://mosir-portal-app:3000`
   - `n8n.e-mosir.pl` → `http://n8n:5678`
 - Dane n8n: wolumen Docker lub bind‑mount (konfigurowalne w `.env`).
 - CI/CD (GitHub Actions, workflow `CD` na tag `release-YYYYMMDD`):
@@ -22,12 +30,13 @@ Ten runbook opisuje architekturę, cotygodniowe wydania, diagnostykę i recovery
   - robi smoke testy (app i opcjonalnie n8n).
 
 ## Kluczowe pliki
-- `deploy/docker-compose.prod.yml` — Traefik + app (prod).
-- `deploy/docker-compose.n8n.yml` — n8n za Traefikiem (alias `n8n-compose-n8n-1`).
-- `deploy/cloudflared.yml` — Cloudflare Tunnel (sieć `traefik-proxy`).
-- `deploy/.env` — konfiguracja serwera (uzupełniana też przez CD).
-- `scripts/deploy.sh` — idempotentny deploy (tryb `prod`, autostart `cloudflared` gdy token).
-- `.github/workflows/cd.yml` — pipeline CD (logi cloudflared + opcjonalny test n8n).
+- `k8s/app/deployment.yaml` — Deployment `mosir-portal` w namespace `apps`.
+- `k8s/app/service.yaml` — Service `mosir-portal` (ClusterIP, port 80 → 3000).
+- `k8s/app/ingress.yaml` — Ingress `mosir-portal` (Traefik, host `app.e-mosir.pl`, TLS `mosir-portal-tls`).
+- `k8s/cloudflared.yaml` — Deployment `cloudflared` w `apps` (tunel Cloudflare → Service’y w klastrze).
+- `deploy/docker-compose.prod.yml`, `deploy/docker-compose.n8n.yml`, `deploy/cloudflared.yml` — legacy stack Docker (Traefik + app + n8n + cloudflared) — obecnie tylko fallback / środowiska testowe.
+- `deploy/.env` — konfiguracja legacy stacka (nie używana przez k3s).
+- `.github/workflows/cd.yml` — pipeline CD (build do GHCR + deploy do k3s / ewentualne logi cloudflared).
 
 ## Sekrety (GitHub → Environments → production)
 - SSH/ścieżka: `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `APP_PATH` (np. `/opt/mosir-portal`).
@@ -35,15 +44,14 @@ Ten runbook opisuje architekturę, cotygodniowe wydania, diagnostykę i recovery
 - Tunnel: `CLOUDFLARE_TUNNEL_TOKEN`.
 - n8n (opcjonalny smoketest): `N8N_HOSTNAME=n8n.e-mosir.pl`.
 
-## Zmienne w `/opt/mosir-portal/deploy/.env`
-- App/Proxy: `APP_HOSTNAME`, `TRAEFIK_NETWORK=traefik-proxy`, `LETSENCRYPT_EMAIL`, `CLOUDFLARE_API_TOKEN`.
-- Tunnel: `CLOUDFLARE_TUNNEL_TOKEN`.
-- n8n routing/URL: `N8N_HOSTNAME=n8n.e-mosir.pl`, `N8N_PROTOCOL=https`, `WEBHOOK_URL=https://n8n.e-mosir.pl/`.
-- n8n dane:
-  - `N8N_DATA_EXTERNAL=true|false`
-  - `N8N_DATA_VOLUME=<nazwa_zew_vol>` (np. `n8n-compose_n8n_data`)
-  - `N8N_DATA_BIND=/abs/ścieżka/.n8n` (bind mount — nadpisuje wolumen)
-  - `N8N_ENCRYPTION_KEY=<jeśli używany wcześniej>`
+## Zmienne w k3s (sekrety / env)
+- `mosir-portal-env` (secret w `apps` — Supabase, Sentry, CSP, itp.):
+  - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
+  - `ALLOWED_IMAGE_HOSTS`, `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_TRACES_SAMPLE_RATE`
+  - `NEXT_TELEMETRY_DISABLED=1`
+- `cloudflared-tunnel-token` (secret w `apps`):
+  - `TUNNEL_TOKEN` — token Cloudflare Tunnel (tylko dla `k8s/cloudflared.yaml`).
+  - Hostnames w samym tunelu: `app.e-mosir.pl`, `n8n.e-mosir.pl`, `dot.e-mosir.pl`.
 
 ## Cotygodniowe wydanie (CD)
 1. Utwórz tag `release-YYYYMMDD` (workflow “Tag release-YYYYMMDD from main” lub ręcznie).
@@ -101,4 +109,3 @@ sudo sysctl --system
 - `curl -I https://n8n.e-mosir.pl` → 200/301.
 - `docker logs cloudflared --tail=50` — “Registered” i ingress dla obu hostów.
 - `docker ps | grep -E 'traefik|mosir-portal-app|n8n|cloudflared'` — Running/Healthy.
-

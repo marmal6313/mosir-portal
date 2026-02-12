@@ -15,7 +15,7 @@ volumes:
 
 services:
   n8n:
-    image: n8nio/n8n:1.64.0
+    image: n8nio/n8n:1.122.4
     container_name: n8n
     restart: unless-stopped
     env_file:

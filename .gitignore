@@ -47,3 +47,7 @@ docs-portal/.docusaurus
 docs-portal/build
 app.log
 supabase.tar.gz
+
+# K8s secrets (real credentials)
+k8s/app/secret.env
+kube-proxy-ds.yaml

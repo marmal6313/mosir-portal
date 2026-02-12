@@ -15,6 +15,7 @@ import {
   getStatusColor, getStatusLabel, getPriorityColor, getPriorityLabel,
   STATUS_ORDER, PRIORITY_ORDER, formatDbDate, timeForSort
 } from '@/lib/tasks-utils'
+import { fetchUserDepartmentIds } from '@/hooks/useUserDepartments'
 
 import { 
   X, 
@@ -67,6 +68,7 @@ export default function DashboardTaskList() {
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set())
   const [showFilters, setShowFilters] = useState(false)
   const [userProfile, setUserProfile] = useState<Database['public']['Views']['users_with_details']['Row'] | null>(null)
+  const [userDepartmentIds, setUserDepartmentIds] = useState<number[]>([])
 
   // domyślne wartości do „czystego" URL
   const DEFAULTS = {
@@ -229,7 +231,7 @@ export default function DashboardTaskList() {
     { value: 'all', label: 'Wszyscy użytkownicy' },
     { value: 'mine', label: 'Moje zadania' },
     { value: 'others', label: 'Innych użytkowników' },
-    { value: 'department', label: 'Mój dział', disabled: !userProfile?.department_id },
+    { value: 'department', label: 'Moje działy', disabled: userDepartmentIds.length === 0 },
   ]
 
   const resetFilters = () => {
@@ -254,17 +256,23 @@ export default function DashboardTaskList() {
       .single()
     
     setUserProfile(profile)
+
+    // Pobierz wszystkie działy użytkownika (multi-department)
+    const deptIds = await fetchUserDepartmentIds(user.id)
+    setUserDepartmentIds(deptIds)
     
     let query = supabase
       .from('tasks_with_details')
       .select('*')
       .order('created_at', { ascending: false })
     
-    if (profile?.role === 'kierownik' && profile.department_id) {
-      query = query.eq('department_id', profile.department_id)
-    } else if (profile?.role !== 'dyrektor') {
-      if (profile?.department_id) {
-        query = query.or(`department_id.eq.${profile.department_id},assigned_to.eq.${user.id}`)
+    if (profile?.role === 'kierownik' && deptIds.length > 0) {
+      // Kierownik widzi zadania ze WSZYSTKICH swoich działów
+      query = query.in('department_id', deptIds)
+    } else if (profile?.role !== 'dyrektor' && profile?.role !== 'superadmin') {
+      if (deptIds.length > 0) {
+        // Pracownik widzi zadania ze swoich działów + przypisane do niego
+        query = query.or(`department_id.in.(${deptIds.join(',')}),assigned_to.eq.${user.id}`)
       } else {
         query = query.eq('assigned_to', user.id)
       }
@@ -320,8 +328,8 @@ export default function DashboardTaskList() {
       filtered = filtered.filter(task => task.assigned_to === userProfile.id)
     } else if (filters.owner === 'others' && userProfile?.id) {
       filtered = filtered.filter(task => task.assigned_to && task.assigned_to !== userProfile.id)
-    } else if (filters.owner === 'department' && userProfile?.department_id) {
-      filtered = filtered.filter(task => task.department_id === userProfile.department_id)
+    } else if (filters.owner === 'department' && userDepartmentIds.length > 0) {
+      filtered = filtered.filter(task => task.department_id != null && userDepartmentIds.includes(task.department_id))
     }
     
     // Sortowanie
@@ -642,8 +650,8 @@ export default function DashboardTaskList() {
                 <h1 className="text-3xl font-bold text-gray-900">Zadania</h1>
                 <p className="text-gray-600">
                   {userProfile?.role === 'kierownik' 
-                    ? `Zadania z działu: ${userProfile.department_name}`
-                    : userProfile?.role === 'dyrektor'
+                    ? `Zadania z Twoich działów (${userProfile.department_names?.join(', ') || userProfile.department_name || 'brak'})`
+                    : userProfile?.role === 'dyrektor' || userProfile?.role === 'superadmin'
                     ? 'Wszystkie zadania w systemie'
                     : 'Twoje zadania'
                   }

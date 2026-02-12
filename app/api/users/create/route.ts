@@ -11,6 +11,7 @@ const payloadSchema = z.object({
   position: z.string().min(1),
   role: z.enum(USER_ROLES).default('pracownik'),
   department_id: z.number().int().optional().nullable(),
+  department_ids: z.array(z.number().int()).optional(),
   phone: z.string().optional().nullable(),
   whatsapp: z.string().optional().nullable(),
   invite: z.boolean().optional().default(true),
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
     if (!parsed.success) {
       return NextResponse.json({ error: 'Invalid payload', details: parsed.error.flatten() }, { status: 400 })
     }
-    const { email, first_name, last_name, position, role, department_id, phone, whatsapp, invite } = parsed.data
+    const { email, first_name, last_name, position, role, department_id, department_ids, phone, whatsapp, invite } = parsed.data
 
     // Kierownik może dodawać tylko do własnego działu i tylko rolę pracownik
     let finalRole: UserRole = role
@@ -110,6 +111,29 @@ export async function POST(req: NextRequest) {
     if (upsertError) {
       console.error('users.create: Profile upsert failed', upsertError)
       return NextResponse.json({ error: 'Profile upsert failed', details: upsertError.message }, { status: 400 })
+    }
+
+    // Wstaw powiązania z działami do user_departments
+    const deptIdsToInsert = department_ids && department_ids.length > 0
+      ? department_ids
+      : (finalDepartmentId ? [finalDepartmentId] : [])
+
+    if (deptIdsToInsert.length > 0) {
+      // Usuń istniejące powiązania
+      await admin.from('user_departments').delete().eq('user_id', authUserId)
+      
+      // Wstaw nowe
+      const deptRows = deptIdsToInsert.map((deptId, index) => ({
+        user_id: authUserId!,
+        department_id: deptId,
+        is_primary: index === 0,
+      }))
+      
+      const { error: deptError } = await admin.from('user_departments').insert(deptRows)
+      if (deptError) {
+        console.error('users.create: user_departments insert failed', deptError)
+        // Nie zwracamy błędu - profil został utworzony
+      }
     }
 
     return NextResponse.json({ ok: true, user_id: authUserId, profile: upserted }, { status: 200 })

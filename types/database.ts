@@ -915,6 +915,45 @@ export type Database = {
           },
         ]
       }
+      user_departments: {
+        Row: {
+          id: string
+          user_id: string
+          department_id: number
+          is_primary: boolean | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          department_id: number
+          is_primary?: boolean | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          department_id?: number
+          is_primary?: boolean | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_departments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_departments_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_settings: {
         Row: {
           id: string
@@ -1056,6 +1095,8 @@ export type Database = {
           active: boolean | null
           department_id: number | null
           department_name: string | null
+          department_ids: number[] | null
+          department_names: string[] | null
           email: string | null
           first_name: string | null
           full_name: string | null
@@ -1071,6 +1112,10 @@ export type Database = {
       }
     }
     Functions: {
+      get_user_department_ids: {
+        Args: { p_user_id: string }
+        Returns: number[]
+      }
       get_department_stats: {
         Args: { dept_id: number; week_num: string }
         Returns: {

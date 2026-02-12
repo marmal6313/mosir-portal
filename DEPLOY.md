@@ -1,5 +1,10 @@
 # DEPLOY — serwer produkcyjny
 
+> Uwaga (stan obecny): główne środowisko produkcyjne MOSiR Portal działa w klastrze k3s
+> (namespace `apps`, manifesty w `k8s/app`, opis w `docs/DEPLOYMENT.md` i `k8s/README.md`).
+> Ten plik opisuje wariant single‑VM na Dockerze (Traefik + app + cloudflared) i
+> można go traktować jako fallback / środowisko testowe lub historyczną dokumentację.
+
 Wymagania:
 - Docker + docker compose
 - Wspólna sieć proxy: `traefik-proxy` (tworzona automatycznie przez skrypt deploy)

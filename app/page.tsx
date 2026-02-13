@@ -27,11 +27,21 @@ export default function Home() {
 
     const startTime = Date.now()
     console.log('Starting auth session check...')
+    console.log('Supabase client initialized:', !!supabase)
+    console.log('Auth object available:', !!supabase.auth)
 
-    supabase.auth.getSession()
-      .then(({ data: { session }, error }) => {
+    // Add a race condition with explicit timeout
+    const sessionPromise = supabase.auth.getSession()
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Manual timeout after 8s')), 8000)
+    )
+
+    Promise.race([sessionPromise, timeoutPromise])
+      .then((result: any) => {
         const duration = Date.now() - startTime
         console.log(`Auth session check completed in ${duration}ms`)
+
+        const { data: { session }, error } = result
 
         if (!isMounted) return
         resolved = true
@@ -56,8 +66,14 @@ export default function Home() {
         if (!isMounted) return
         resolved = true
         clearTimeout(fallbackTimer)
-        console.error('Auth check threw, redirecting to /login', error)
-        setStatusMessage('Wystąpił błąd. Przekierowuję do logowania...')
+        const duration = Date.now() - startTime
+        console.error(`Auth check threw after ${duration}ms, redirecting to /login`, error)
+        console.error('Error details:', {
+          message: error?.message,
+          name: error?.name,
+          stack: error?.stack
+        })
+        setStatusMessage('Wystąpił błąd połączenia. Przekierowuję do logowania...')
         router.replace('/login')
       })
 

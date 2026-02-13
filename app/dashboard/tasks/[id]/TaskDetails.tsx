@@ -491,6 +491,25 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
       // Zaktualizuj lokalne dane
       Object.assign(task, updateData)
       
+      // Wyślij powiadomienie o zmianie statusu (fire-and-forget)
+      if (field === 'status' && oldValue !== newValue) {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.access_token) {
+          fetch('/api/tasks/notify-status', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({
+              task_id: task.id,
+              old_status: oldValue,
+              new_status: newValue,
+            }),
+          }).catch(err => console.error('Błąd powiadomienia o statusie:', err))
+        }
+      }
+
       setSuccess(`Pole ${field === 'status' ? 'status' : field === 'due_date' ? 'termin' : field === 'description' ? 'opis' : field === 'priority' ? 'priorytet' : 'przydzielenie'} zostało zaktualizowane!`)
       setEditingField(null)
       

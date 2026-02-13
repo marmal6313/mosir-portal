@@ -15,7 +15,10 @@ volumes:
 
 services:
   n8n:
-    image: n8nio/n8n:1.122.4
+    build:
+      context: .
+      dockerfile: n8n.Dockerfile
+    image: n8n-custom:1.122.4
     container_name: n8n
     restart: unless-stopped
     env_file:
@@ -27,6 +30,8 @@ services:
       - WEBHOOK_URL=${WEBHOOK_URL:-https://n8n.e-mosir.pl/}
       - N8N_PORT=5678
       - GENERIC_TIMEZONE=${GENERIC_TIMEZONE:-Europe/Warsaw}
+      - PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+      - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
       # Uncomment to enable basic auth to the editor UI
       # - N8N_BASIC_AUTH_ACTIVE=true
       # - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}

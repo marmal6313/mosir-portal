@@ -1,5 +1,47 @@
 # Worklog
 
+## 2026-02-13 — release-250213: 3 Schedule Views, Shift Preferences, Multi-dept Task Fix, RACS
+### Nowa funkcjonalność: 3 widoki grafików pracy
+- Dodano możliwość przełączania między trzema widokami grafików: Excel-like Grid, Timeline/Gantt, Weekly Cards.
+- **Excel Grid**: tabela ze wszystkimi pracownikami jako wierszami, dni jako kolumny, sticky nazwiska, automatyczne sumowanie.
+- **Timeline**: wizualizacja bloków zmianowych na osi czasu, kolorowe bloki, edycja inline.
+- **Karty**: istniejący widok kart z pełnymi szczegółami dla każdego pracownika.
+- Wszystkie widoki wspierają: filtrowanie po dziale, wyszukiwanie, wypełnianie standardem, kopiowanie tygodni.
+- Pliki: `app/dashboard/schedules/page.tsx`, `components/ui/tabs.tsx`.
+
+### Nowa funkcjonalność: Preferencje zmian pracowników
+- Dodano konfigurację rodzaju pracownika i dozwolonych typów zmian.
+- 5 nowych kolumn w `users`: `is_office_worker`, `default_shift_start`, `default_shift_end`, `default_shift_type`, `allowed_shift_types`.
+- Dropdown wyboru zmiany pokazuje tylko dozwolone typy dla danego użytkownika.
+- Przycisk "+ Standard" używa preferencji użytkownika (nie zawsze 8:00-16:00).
+- Badge "Biuro" przy pracownikach biurowych.
+- UI w `/dashboard/users` do konfiguracji preferencji.
+- Migracja SQL: `SQL/migration-user-shift-preferences.sql`.
+- Pliki: `app/dashboard/schedules/page.tsx`, `app/dashboard/users/page.tsx`, `app/api/users/update/route.ts`, `docs/shift-preferences-setup.md`.
+
+### Fix: Multi-department task creation
+- Naprawiono błąd gdzie użytkownicy z wieloma działami nie mogli tworzyć zadań dla wszystkich swoich działów.
+- Formularz tworzenia zadania teraz pobiera wszystkie działy użytkownika z `user_departments`.
+- Dropdown "Dział" pokazuje wszystkie działy użytkownika (nie tylko główny).
+- Badge'e w nagłówku pokazują wszystkie działy użytkownika.
+- Domyślny dział ustawiany na pierwszy (primary) z listy.
+- Pliki: `app/dashboard/tasks/add-task/page.tsx`, `hooks/useUserDepartments.ts`, `docs/fix-multi-department-task-creation.md`.
+
+### Rozbudowa: RACS Integration
+- Pełna integracja z systemem kontroli dostępu Roger RACS-5.
+- Backend: 6 nowych tabel, RACS SOAP client, sync service, 11 API endpoints.
+- Frontend: Attendance dashboard (2 tryby: summary/records), Schedules dashboard (3 widoki).
+- Mock RACS server dla development z 13 rzeczywistymi użytkownikami MOSiR i ~900 eventami.
+- Migracje: `SQL/migration-attendance-schedules.sql`, `SQL/fix-rls-attendance.sql`.
+- Pliki: `lib/racs-client.ts`, `lib/racs-sync.ts`, `app/dashboard/attendance/page.tsx`, `scripts/mock-racs-server.js`.
+- Dokumentacja: `docs/racs-integration-setup.md`, `docs/roger-racs5-integration.md`.
+
+### Deployment
+- Release notes: `docs/RELEASE-NOTES-250213.md`.
+- Pre-deployment checklist: `docs/PRE-DEPLOYMENT-CHECKLIST.md`.
+- Zaktualizowano: `docs/DEPLOYMENT.md`, `docs/RUNBOOK.md`, `docs/worklog.md`.
+- Tag `release-250213` → GitHub Actions build Docker image → GHCR.
+
 ## 2026-02-12 — release-250212: Multi-department + infra
 ### Nowa funkcjonalność: przypisanie użytkownika do wielu działów
 - Dodano tabelę `user_departments` (junction table, many-to-many) — migracja SQL `SQL/migration-user-departments.sql`.

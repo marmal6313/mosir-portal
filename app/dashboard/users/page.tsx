@@ -57,6 +57,11 @@ type EditUserFormState = {
   phone: string
   whatsapp: string
   active: boolean
+  is_office_worker: boolean
+  allowed_shift_types: string[]
+  default_shift_type: string
+  default_shift_start: string
+  default_shift_end: string
 }
 
 type CreateUserPayload = {
@@ -83,6 +88,11 @@ type UpdateUserPayload = {
   phone?: string | null
   whatsapp?: string | null
   active?: boolean
+  is_office_worker?: boolean | null
+  allowed_shift_types?: string[] | null
+  default_shift_type?: string | null
+  default_shift_start?: string | null
+  default_shift_end?: string | null
 }
 
 const extractErrorMessage = (payload: unknown): string | undefined => {
@@ -123,6 +133,11 @@ export default function UsersPage() {
     phone: '',
     whatsapp: '',
     active: true,
+    is_office_worker: true,
+    allowed_shift_types: [],
+    default_shift_type: '',
+    default_shift_start: '08:00',
+    default_shift_end: '16:00',
   })
   const [adding, setAdding] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
@@ -849,6 +864,13 @@ export default function UsersPage() {
                                       .select('department_id')
                                       .eq('user_id', user.id!)
                                     const deptIds = userDepts?.map(d => d.department_id) || []
+                                    // Get shift preferences from base users table
+                                    const { data: userData } = await supabase
+                                      .from('users')
+                                      .select('allowed_shift_types, default_shift_type, default_shift_start, default_shift_end, is_office_worker')
+                                      .eq('id', user.id!)
+                                      .single()
+
                                     setEditForm({
                                       first_name: user.first_name ?? '',
                                       last_name: user.last_name ?? '',
@@ -859,6 +881,11 @@ export default function UsersPage() {
                                       phone: user.phone ?? '',
                                       whatsapp: user.whatsapp ?? '',
                                       active: !!user.active,
+                                      is_office_worker: userData?.is_office_worker ?? true,
+                                      allowed_shift_types: userData?.allowed_shift_types ?? [],
+                                      default_shift_type: userData?.default_shift_type ?? '',
+                                      default_shift_start: userData?.default_shift_start ?? '08:00',
+                                      default_shift_end: userData?.default_shift_end ?? '16:00',
                                     })
                                     setEditOpen(true)
                                   }}
@@ -1116,6 +1143,93 @@ export default function UsersPage() {
                 <label className="block text-sm font-medium mb-1">WhatsApp</label>
                 <Input value={editForm.whatsapp} onChange={e=>setEditForm({...editForm, whatsapp:e.target.value})} />
               </div>
+
+              {/* Shift Preferences Section */}
+              <div className="md:col-span-2 border-t pt-4 mt-4">
+                <h4 className="text-sm font-semibold mb-3">⏰ Preferencje zmian</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      id="is_office_worker"
+                      type="checkbox"
+                      checked={editForm.is_office_worker}
+                      onChange={e=>setEditForm({...editForm, is_office_worker: e.target.checked})}
+                    />
+                    <label htmlFor="is_office_worker" className="text-sm">Pracownik biurowy (8:00-16:00)</label>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Domyślny typ zmiany</label>
+                    <select
+                      value={editForm.default_shift_type}
+                      onChange={e=>setEditForm({...editForm, default_shift_type: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Brak (użyj godzin)</option>
+                      <option value="1">1 - Poranna (06:00-13:00)</option>
+                      <option value="2">2 - Popołudniowa (15:00-22:00)</option>
+                      <option value="12">12 - Długa (09:00-21:00)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Godzina rozpoczęcia</label>
+                    <Input
+                      type="time"
+                      value={editForm.default_shift_start}
+                      onChange={e=>setEditForm({...editForm, default_shift_start: e.target.value})}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Godzina zakończenia</label>
+                    <Input
+                      type="time"
+                      value={editForm.default_shift_end}
+                      onChange={e=>setEditForm({...editForm, default_shift_end: e.target.value})}
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium mb-2">Dozwolone typy zmian</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {[
+                        { key: '1', label: '1 - Poranna' },
+                        { key: '2', label: '2 - Popołudniowa' },
+                        { key: '12', label: '12 - Długa' },
+                        { key: 'wp', label: 'wp - Wolne' },
+                        { key: 'wn', label: 'wn - Wolna niedziela' },
+                        { key: 'on', label: 'on - Odbiór niedzieli' },
+                        { key: 'dw', label: 'dw - Dzień wolny' },
+                      ].map(shift => (
+                        <label key={shift.key} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded border">
+                          <Checkbox
+                            checked={editForm.allowed_shift_types.includes(shift.key)}
+                            onCheckedChange={(val) => {
+                              if (val) {
+                                setEditForm({
+                                  ...editForm,
+                                  allowed_shift_types: [...editForm.allowed_shift_types, shift.key]
+                                })
+                              } else {
+                                setEditForm({
+                                  ...editForm,
+                                  allowed_shift_types: editForm.allowed_shift_types.filter(t => t !== shift.key)
+                                })
+                              }
+                            }}
+                          />
+                          <span className="text-xs">{shift.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Puste = wszystkie dozwolone. Pracownik zobaczy tylko wybrane opcje w grafiku.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex items-center space-x-2 mt-2">
                 <input id="active" type="checkbox" checked={editForm.active} onChange={e=>setEditForm({...editForm, active: e.target.checked})} />
                 <label htmlFor="active" className="text-sm">Aktywny</label>
@@ -1137,6 +1251,11 @@ export default function UsersPage() {
                     phone: editForm.phone || null,
                     whatsapp: editForm.whatsapp || null,
                     active: editForm.active,
+                    is_office_worker: editForm.is_office_worker,
+                    allowed_shift_types: editForm.allowed_shift_types.length > 0 ? editForm.allowed_shift_types : null,
+                    default_shift_type: editForm.default_shift_type || null,
+                    default_shift_start: editForm.default_shift_start || null,
+                    default_shift_end: editForm.default_shift_end || null,
                   }
                   const { data: { session } } = await supabase.auth.getSession()
                   if (!session?.access_token) {

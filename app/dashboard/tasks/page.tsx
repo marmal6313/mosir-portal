@@ -527,10 +527,13 @@ export default function DashboardTaskList() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
+      const oldStatus = isCompleted ? 'in_progress' : 'completed'
+      const newStatus = isCompleted ? 'completed' : 'in_progress'
+
       const { error } = await supabase
         .from('tasks')
         .update({ 
-          status: isCompleted ? 'completed' : 'in_progress',
+          status: newStatus,
           updated_at: new Date().toISOString()
         })
         .eq('id', taskId)
@@ -540,10 +543,27 @@ export default function DashboardTaskList() {
         return
       }
 
+      // Wyślij powiadomienie o zmianie statusu (fire-and-forget)
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        fetch('/api/tasks/notify-status', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            task_id: taskId,
+            old_status: oldStatus,
+            new_status: newStatus,
+          }),
+        }).catch(err => console.error('Błąd powiadomienia o statusie:', err))
+      }
+
       setTasks(prevTasks => 
         prevTasks.map(task => 
           task.id === taskId 
-            ? { ...task, status: isCompleted ? 'completed' : 'in_progress' }
+            ? { ...task, status: newStatus }
             : task
         )
       )

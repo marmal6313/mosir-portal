@@ -3,17 +3,18 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
+import { useUserDepartments } from '@/hooks/useUserDepartments'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  ArrowLeft, 
-  Plus, 
-  Building2, 
-  User, 
-  Target, 
-  Calendar, 
+import {
+  ArrowLeft,
+  Plus,
+  Building2,
+  User,
+  Target,
+  Calendar,
   FileText,
   CheckCircle2,
   AlertTriangle,
@@ -32,6 +33,8 @@ export default function AddTaskPage() {
   const [departments, setDepartments] = useState<Database["public"]["Tables"]["departments"]["Row"][]>([])
   const [users, setUsers] = useState<Pick<Database["public"]["Tables"]["users"]["Row"], 'id' | 'first_name' | 'last_name' | 'department_id' | 'active'>[]>([])
   const [userProfile, setUserProfile] = useState<Database["public"]["Tables"]["users"]["Row"] | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const { departmentIds } = useUserDepartments(currentUserId)
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -51,6 +54,9 @@ export default function AddTaskPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
+      // Ustaw ID użytkownika dla hooka
+      setCurrentUserId(user.id)
+
       // Pobierz profil użytkownika z tabeli users (ma department_id)
       const { data: profile } = await supabase
         .from('users')
@@ -59,19 +65,29 @@ export default function AddTaskPage() {
         .single()
 
       if (!profile) return
-      
+
       setUserProfile(profile)
+
+      // Pobierz działy użytkownika z user_departments
+      const { data: userDepts } = await supabase
+        .from('user_departments')
+        .select('department_id')
+        .eq('user_id', user.id)
+
+      const userDepartmentIds = userDepts?.map(d => d.department_id) || []
 
       // Pobierz działy zgodnie z uprawnieniami
       let departmentsQuery = supabase.from('departments').select('*')
-      
-      // Jeśli użytkownik jest kierownikiem, pokaż tylko jego dział
-      if (profile.role === 'kierownik' && profile.department_id) {
-        departmentsQuery = departmentsQuery.eq('id', profile.department_id)
-      }
-      // Jeśli użytkownik jest pracownikiem, pokaż tylko jego dział
-      else if (profile.role !== 'dyrektor' && profile.role !== 'superadmin' && profile.department_id) {
-        departmentsQuery = departmentsQuery.eq('id', profile.department_id)
+
+      // Jeśli użytkownik jest kierownikiem lub pracownikiem, pokaż tylko jego działy
+      if (profile.role !== 'dyrektor' && profile.role !== 'superadmin') {
+        if (userDepartmentIds.length > 0) {
+          // Użytkownik ma przypisane działy w user_departments - pokaż je
+          departmentsQuery = departmentsQuery.in('id', userDepartmentIds)
+        } else if (profile.department_id) {
+          // Fallback do głównego działu jeśli brak w user_departments
+          departmentsQuery = departmentsQuery.eq('id', profile.department_id)
+        }
       }
       // Dla dyrektora i superadmina pokaż wszystkie działy
 
@@ -100,11 +116,18 @@ export default function AddTaskPage() {
       // Ustaw domyślne wartości w formularzu
       const tomorrow = new Date()
       tomorrow.setDate(tomorrow.getDate() + 1)
-      
+
+      // Ustaw domyślny dział - pierwszy z listy lub główny dział
+      const defaultDeptId = userDepartmentIds.length > 0
+        ? String(userDepartmentIds[0])
+        : profile.department_id
+        ? String(profile.department_id)
+        : ""
+
       setForm(f => ({
         ...f,
         assigned_to: profile.role === 'kierownik' ? "" : profile.id || "", // Kierownik może przydzielać innym
-        department_id: profile.department_id ? String(profile.department_id) : "",
+        department_id: defaultDeptId,
         due_date: tomorrow.toISOString().slice(0, 10)
       }))
     }
@@ -174,16 +197,23 @@ export default function AddTaskPage() {
                 Wypełnij formularz aby utworzyć nowe zadanie w systemie
               </p>
               {userProfile && (
-                <div className="mt-2 flex items-center gap-2">
+                <div className="mt-2 flex items-center gap-2 flex-wrap">
                   <Badge variant="secondary" className="text-xs">
-                    {userProfile.role === 'kierownik' ? 'Kierownik' : 
-                     userProfile.role === 'dyrektor' ? 'Dyrektor' : 
+                    {userProfile.role === 'kierownik' ? 'Kierownik' :
+                     userProfile.role === 'dyrektor' ? 'Dyrektor' :
                      userProfile.role === 'superadmin' ? 'Super Administrator' : 'Pracownik'}
                   </Badge>
-                  {userProfile.department_id && (
-                    <Badge variant="outline" className="text-xs">
-                      {departments.find(d => d.id === userProfile.department_id)?.name}
-                    </Badge>
+                  {departmentIds.length > 0 && (
+                    <>
+                      {departmentIds.map(deptId => {
+                        const dept = departments.find(d => d.id === deptId)
+                        return dept ? (
+                          <Badge key={deptId} variant="outline" className="text-xs">
+                            {dept.name}
+                          </Badge>
+                        ) : null
+                      })}
+                    </>
                   )}
                 </div>
               )}
@@ -252,9 +282,11 @@ export default function AddTaskPage() {
                       <option key={d.id} value={d.id}>{d.name}</option>
                     ))}
                   </select>
-                  {departments.length === 0 && (
+                  {departments.length === 0 ? (
                     <p className="text-xs text-gray-500">Brak dostępnych działów</p>
-                  )}
+                  ) : departments.length > 1 ? (
+                    <p className="text-xs text-green-600">Dostępne działy: {departments.length}</p>
+                  ) : null}
                 </div>
 
                 <div className="space-y-2">

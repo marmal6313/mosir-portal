@@ -1,0 +1,55 @@
+{
+  "name": "WhatsApp Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-notification",
+        "options": {}
+      },
+      "id": "webhook-1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "whatsapp-notification"
+    },
+    {
+      "parameters": {
+        "operation": "sendText",
+        "phoneNumber": "={{ $json.phone }}",
+        "message": "=📋 {{ $json.title }}\n\n{{ $json.message }}{{ $json.task_url ? '\\n\\n🔗 Szczegóły: ' + $json.task_url : '' }}"
+      },
+      "id": "whatsapp-send-1",
+      "name": "WhatsApp Send",
+      "type": "@salmaneelidrissi/n8n-nodes-whatsapp-web.whatsAppWebSend",
+      "typeVersion": 1,
+      "position": [480, 300],
+      "credentials": {
+        "whatsAppWebApi": {
+          "id": "",
+          "name": "WhatsApp Web"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [],
+  "pinData": {}
+}

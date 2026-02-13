@@ -285,6 +285,59 @@ export type Database = {
         }
         Relationships: []
       }
+      notification_preferences: {
+        Row: {
+          user_id: string
+          email_enabled: boolean
+          whatsapp_enabled: boolean
+          email_address: string | null
+          whatsapp_number: string | null
+          notify_task_assigned: boolean
+          notify_task_completed: boolean
+          notify_task_overdue: boolean
+          notify_mentions: boolean
+          quiet_hours_start: string | null
+          quiet_hours_end: string | null
+          updated_at: string
+        }
+        Insert: {
+          user_id: string
+          email_enabled?: boolean
+          whatsapp_enabled?: boolean
+          email_address?: string | null
+          whatsapp_number?: string | null
+          notify_task_assigned?: boolean
+          notify_task_completed?: boolean
+          notify_task_overdue?: boolean
+          notify_mentions?: boolean
+          quiet_hours_start?: string | null
+          quiet_hours_end?: string | null
+          updated_at?: string
+        }
+        Update: {
+          user_id?: string
+          email_enabled?: boolean
+          whatsapp_enabled?: boolean
+          email_address?: string | null
+          whatsapp_number?: string | null
+          notify_task_assigned?: boolean
+          notify_task_completed?: boolean
+          notify_task_overdue?: boolean
+          notify_mentions?: boolean
+          quiet_hours_start?: string | null
+          quiet_hours_end?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       notifications: {
         Row: {
           created_at: string | null
@@ -808,6 +861,11 @@ export type Database = {
           role: string | null
           updated_at: string | null
           whatsapp: string | null
+          allowed_shift_types: string[] | null
+          default_shift_type: string | null
+          default_shift_start: string | null
+          default_shift_end: string | null
+          is_office_worker: boolean | null
         }
         Insert: {
           active?: boolean | null
@@ -824,6 +882,11 @@ export type Database = {
           role?: string | null
           updated_at?: string | null
           whatsapp?: string | null
+          allowed_shift_types?: string[] | null
+          default_shift_type?: string | null
+          default_shift_start?: string | null
+          default_shift_end?: string | null
+          is_office_worker?: boolean | null
         }
         Update: {
           active?: boolean | null
@@ -840,6 +903,11 @@ export type Database = {
           role?: string | null
           updated_at?: string | null
           whatsapp?: string | null
+          allowed_shift_types?: string[] | null
+          default_shift_type?: string | null
+          default_shift_start?: string | null
+          default_shift_end?: string | null
+          is_office_worker?: boolean | null
         }
         Relationships: [
           {
@@ -1019,6 +1087,314 @@ export type Database = {
         }
         Relationships: []
       }
+      racs_integration_config: {
+        Row: {
+          id: string
+          service_url: string
+          username: string
+          password_encrypted: string
+          last_sync_event_id: number | null
+          sync_enabled: boolean | null
+          sync_interval_minutes: number | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          service_url?: string
+          username: string
+          password_encrypted: string
+          last_sync_event_id?: number | null
+          sync_enabled?: boolean | null
+          sync_interval_minutes?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          service_url?: string
+          username?: string
+          password_encrypted?: string
+          last_sync_event_id?: number | null
+          sync_enabled?: boolean | null
+          sync_interval_minutes?: number | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      racs_user_mapping: {
+        Row: {
+          id: string
+          user_id: string
+          racs_person_id: number | null
+          racs_credential_id: number | null
+          racs_credential_number: string | null
+          active: boolean | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          racs_person_id?: number | null
+          racs_credential_id?: number | null
+          racs_credential_number?: string | null
+          active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          racs_person_id?: number | null
+          racs_credential_id?: number | null
+          racs_credential_number?: string | null
+          active?: boolean | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "racs_user_mapping_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      work_schedules: {
+        Row: {
+          id: string
+          user_id: string
+          department_id: number | null
+          schedule_date: string
+          shift_start: string
+          shift_end: string
+          shift_type: string | null
+          is_day_off: boolean | null
+          notes: string | null
+          created_by: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          department_id?: number | null
+          schedule_date: string
+          shift_start: string
+          shift_end: string
+          shift_type?: string | null
+          is_day_off?: boolean | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          department_id?: number | null
+          schedule_date?: string
+          shift_start?: string
+          shift_end?: string
+          shift_type?: string | null
+          is_day_off?: boolean | null
+          notes?: string | null
+          created_by?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_schedules_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_schedules_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_schedules_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attendance_records: {
+        Row: {
+          id: string
+          user_id: string
+          event_timestamp: string
+          event_type: string
+          racs_event_id: number | null
+          racs_event_code: number | null
+          racs_door_id: number | null
+          racs_door_name: string | null
+          racs_access_point_id: number | null
+          schedule_id: string | null
+          is_late: boolean | null
+          is_early_leave: boolean | null
+          notes: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          event_timestamp: string
+          event_type: string
+          racs_event_id?: number | null
+          racs_event_code?: number | null
+          racs_door_id?: number | null
+          racs_door_name?: string | null
+          racs_access_point_id?: number | null
+          schedule_id?: string | null
+          is_late?: boolean | null
+          is_early_leave?: boolean | null
+          notes?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          event_timestamp?: string
+          event_type?: string
+          racs_event_id?: number | null
+          racs_event_code?: number | null
+          racs_door_id?: number | null
+          racs_door_name?: string | null
+          racs_access_point_id?: number | null
+          schedule_id?: string | null
+          is_late?: boolean | null
+          is_early_leave?: boolean | null
+          notes?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_records_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_records_schedule_id_fkey"
+            columns: ["schedule_id"]
+            isOneToOne: false
+            referencedRelation: "work_schedules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attendance_summary: {
+        Row: {
+          id: string
+          user_id: string
+          date: string
+          first_entry: string | null
+          last_exit: string | null
+          total_hours: number | null
+          scheduled_hours: number | null
+          is_present: boolean | null
+          is_late: boolean | null
+          is_early_leave: boolean | null
+          is_absent: boolean | null
+          absence_reason: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          date: string
+          first_entry?: string | null
+          last_exit?: string | null
+          total_hours?: number | null
+          scheduled_hours?: number | null
+          is_present?: boolean | null
+          is_late?: boolean | null
+          is_early_leave?: boolean | null
+          is_absent?: boolean | null
+          absence_reason?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          date?: string
+          first_entry?: string | null
+          last_exit?: string | null
+          total_hours?: number | null
+          scheduled_hours?: number | null
+          is_present?: boolean | null
+          is_late?: boolean | null
+          is_early_leave?: boolean | null
+          is_absent?: boolean | null
+          absence_reason?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_summary_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      racs_sync_log: {
+        Row: {
+          id: string
+          sync_started_at: string
+          sync_completed_at: string | null
+          last_event_id_synced: number | null
+          events_processed: number | null
+          events_created: number | null
+          events_skipped: number | null
+          status: string | null
+          error_message: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          sync_started_at: string
+          sync_completed_at?: string | null
+          last_event_id_synced?: number | null
+          events_processed?: number | null
+          events_created?: number | null
+          events_skipped?: number | null
+          status?: string | null
+          error_message?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          sync_started_at?: string
+          sync_completed_at?: string | null
+          last_event_id_synced?: number | null
+          events_processed?: number | null
+          events_created?: number | null
+          events_skipped?: number | null
+          status?: string | null
+          error_message?: string | null
+          created_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       survey_analytics: {
@@ -1112,6 +1488,21 @@ export type Database = {
       }
     }
     Functions: {
+      get_notification_preferences: {
+        Args: { p_user_id: string }
+        Returns: {
+          email_enabled: boolean
+          whatsapp_enabled: boolean
+          email_address: string | null
+          whatsapp_number: string | null
+          notify_task_assigned: boolean
+          notify_task_completed: boolean
+          notify_task_overdue: boolean
+          notify_mentions: boolean
+          quiet_hours_start: string | null
+          quiet_hours_end: string | null
+        }[]
+      }
       get_user_department_ids: {
         Args: { p_user_id: string }
         Returns: number[]

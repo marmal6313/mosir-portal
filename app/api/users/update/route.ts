@@ -15,6 +15,11 @@ const payloadSchema = z.object({
   phone: z.string().optional().nullable(),
   whatsapp: z.string().optional().nullable(),
   active: z.boolean().optional(),
+  is_office_worker: z.boolean().optional().nullable(),
+  allowed_shift_types: z.array(z.string()).optional().nullable(),
+  default_shift_type: z.string().optional().nullable(),
+  default_shift_start: z.string().optional().nullable(),
+  default_shift_end: z.string().optional().nullable(),
 })
 
 export async function PATCH(req: NextRequest) {
@@ -44,7 +49,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid payload', details: parsed.error.flatten() }, { status: 400 })
     }
 
-    const { id, first_name, last_name, position, role, department_id, department_ids, phone, whatsapp, active } = parsed.data
+    const { id, first_name, last_name, position, role, department_id, department_ids, phone, whatsapp, active, is_office_worker, allowed_shift_types, default_shift_type, default_shift_start, default_shift_end } = parsed.data
     console.log('users.update: parsed payload', parsed.data)
 
     // Fetch target user to enforce scope/constraints
@@ -82,6 +87,11 @@ export async function PATCH(req: NextRequest) {
       active?: boolean
       role?: UserRole
       department_id?: number | null
+      is_office_worker?: boolean | null
+      allowed_shift_types?: string[] | null
+      default_shift_type?: string | null
+      default_shift_start?: string | null
+      default_shift_end?: string | null
     }
 
     const updates: UserUpdateFields = {}
@@ -93,6 +103,11 @@ export async function PATCH(req: NextRequest) {
     if (active !== undefined) updates.active = active
     if (role !== undefined) updates.role = role
     if (department_id !== undefined) updates.department_id = department_id
+    if (is_office_worker !== undefined) updates.is_office_worker = is_office_worker
+    if (allowed_shift_types !== undefined) updates.allowed_shift_types = allowed_shift_types
+    if (default_shift_type !== undefined) updates.default_shift_type = default_shift_type
+    if (default_shift_start !== undefined) updates.default_shift_start = default_shift_start
+    if (default_shift_end !== undefined) updates.default_shift_end = default_shift_end
 
     if (Object.keys(updates).length === 0) {
       return NextResponse.json({ ok: true, message: 'Nothing to update' })

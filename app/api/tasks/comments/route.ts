@@ -133,12 +133,19 @@ export async function POST(req: NextRequest) {
             task_id: taskId,
           }))
 
-          const { error: notificationError } = await admin
+          const { data: insertedNotifs, error: notificationError } = await admin
             .from('notifications')
             .insert(notificationPayload)
+            .select('id')
 
           if (notificationError) {
             console.error('tasks.comments: notification insert failed', notificationError)
+          }
+
+          // Trigger email/WhatsApp delivery (fire-and-forget)
+          if (insertedNotifs && insertedNotifs.length > 0) {
+            const { triggerNotificationDelivery } = await import('@/lib/notify')
+            triggerNotificationDelivery(insertedNotifs.map((n: { id: string }) => n.id))
           }
         }
       } catch (notificationError) {

@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Switch } from '@/components/ui/switch'
 import { 
   Building2, 
   Calendar,
@@ -19,7 +20,12 @@ import {
   AlertCircle,
   Info,
   KeyRound,
-  Lock
+  Lock,
+  Bell,
+  Mail,
+  MessageCircle,
+  Moon,
+  Save
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import type { Database } from '@/types/database'
@@ -43,6 +49,23 @@ export default function ProfilePage() {
     next: '',
     confirm: ''
   })
+
+  // Notification preferences state
+  const [notifPrefs, setNotifPrefs] = useState({
+    email_enabled: false,
+    whatsapp_enabled: false,
+    email_address: '',
+    whatsapp_number: '',
+    notify_task_assigned: true,
+    notify_task_completed: true,
+    notify_task_overdue: true,
+    notify_mentions: true,
+    quiet_hours_start: '',
+    quiet_hours_end: '',
+  })
+  const [notifLoading, setNotifLoading] = useState(false)
+  const [notifSaving, setNotifSaving] = useState(false)
+  const [notifMessage, setNotifMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   
   // Form state
   const [formData, setFormData] = useState({
@@ -141,9 +164,107 @@ export default function ProfilePage() {
     }
   }, [router, toast])
 
+  // Load notification preferences
+  const loadNotifPrefs = useCallback(async (userId: string, userEmail: string, userWhatsapp: string) => {
+    try {
+      setNotifLoading(true)
+      const { data, error } = await supabase
+        .from('notification_preferences')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle()
+
+      if (error) {
+        console.error('Error loading notification preferences:', error)
+        return
+      }
+
+      if (data) {
+        setNotifPrefs({
+          email_enabled: data.email_enabled ?? false,
+          whatsapp_enabled: data.whatsapp_enabled ?? false,
+          email_address: data.email_address || userEmail || '',
+          whatsapp_number: data.whatsapp_number || userWhatsapp || '',
+          notify_task_assigned: data.notify_task_assigned ?? true,
+          notify_task_completed: data.notify_task_completed ?? true,
+          notify_task_overdue: data.notify_task_overdue ?? true,
+          notify_mentions: data.notify_mentions ?? true,
+          quiet_hours_start: data.quiet_hours_start || '',
+          quiet_hours_end: data.quiet_hours_end || '',
+        })
+      } else {
+        // No preferences yet — use defaults with user's email/whatsapp
+        setNotifPrefs(prev => ({
+          ...prev,
+          email_address: userEmail || '',
+          whatsapp_number: userWhatsapp || '',
+        }))
+      }
+    } catch (err) {
+      console.error('Error loading notification preferences:', err)
+    } finally {
+      setNotifLoading(false)
+    }
+  }, [])
+
+  const handleNotifSave = async () => {
+    if (!user) return
+    setNotifSaving(true)
+    setNotifMessage(null)
+
+    try {
+      const payload = {
+        email_enabled: notifPrefs.email_enabled,
+        whatsapp_enabled: notifPrefs.whatsapp_enabled,
+        email_address: notifPrefs.email_address || null,
+        whatsapp_number: notifPrefs.whatsapp_number || null,
+        notify_task_assigned: notifPrefs.notify_task_assigned,
+        notify_task_completed: notifPrefs.notify_task_completed,
+        notify_task_overdue: notifPrefs.notify_task_overdue,
+        notify_mentions: notifPrefs.notify_mentions,
+        quiet_hours_start: notifPrefs.quiet_hours_start || null,
+        quiet_hours_end: notifPrefs.quiet_hours_end || null,
+      }
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('Brak sesji – zaloguj się ponownie.')
+
+      const res = await fetch('/api/profile/notification-preferences', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.details || data.error || 'Unknown error')
+      }
+
+      setNotifMessage({ type: 'success', text: 'Preferencje powiadomień zostały zapisane.' })
+    } catch (err) {
+      console.error('Error saving notification preferences:', err)
+      setNotifMessage({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Nie udało się zapisać preferencji.',
+      })
+    } finally {
+      setNotifSaving(false)
+    }
+  }
+
   useEffect(() => {
     checkAuthAndLoadProfile()
   }, [checkAuthAndLoadProfile])
+
+  // Load notification preferences after profile is loaded
+  useEffect(() => {
+    if (user && profile) {
+      loadNotifPrefs(user.id, user.email || '', profile.whatsapp || '')
+    }
+  }, [user, profile, loadNotifPrefs])
 
   const handleSave = async () => {
     if (!user || !profile) return
@@ -482,6 +603,214 @@ export default function ProfilePage() {
           </Card>
       </div>
     </div>
+
+      {/* Notification Preferences */}
+      <div className="mt-6">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <Bell className="h-5 w-5 text-blue-600" />
+                  Powiadomienia
+                </CardTitle>
+                <CardDescription>Wybierz kanały i typy powiadomień, które chcesz otrzymywać</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {notifMessage && (
+              <div
+                className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm mb-4 ${
+                  notifMessage.type === 'success'
+                    ? 'border-green-200 bg-green-50 text-green-700'
+                    : 'border-red-200 bg-red-50 text-red-700'
+                }`}
+              >
+                {notifMessage.type === 'success' ? (
+                  <CheckCircle className="h-4 w-4" />
+                ) : (
+                  <AlertCircle className="h-4 w-4" />
+                )}
+                <span>{notifMessage.text}</span>
+              </div>
+            )}
+
+            <div className="space-y-6">
+              {/* Channels */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Kanały dostarczania</h3>
+                <div className="space-y-4">
+                  {/* Email */}
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Mail className="h-5 w-5 text-blue-600" />
+                      <div>
+                        <p className="font-medium text-sm">Email</p>
+                        <p className="text-xs text-gray-500">Powiadomienia na adres email</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={notifPrefs.email_enabled}
+                      onCheckedChange={(checked) =>
+                        setNotifPrefs(prev => ({ ...prev, email_enabled: checked }))
+                      }
+                    />
+                  </div>
+
+                  {notifPrefs.email_enabled && (
+                    <div className="ml-8 space-y-2">
+                      <Label htmlFor="notif-email">Adres email</Label>
+                      <Input
+                        id="notif-email"
+                        type="email"
+                        value={notifPrefs.email_address}
+                        onChange={(e) =>
+                          setNotifPrefs(prev => ({ ...prev, email_address: e.target.value }))
+                        }
+                        placeholder="twoj@email.pl"
+                      />
+                    </div>
+                  )}
+
+                  {/* WhatsApp */}
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <MessageCircle className="h-5 w-5 text-green-600" />
+                      <div>
+                        <p className="font-medium text-sm">WhatsApp</p>
+                        <p className="text-xs text-gray-500">Wiadomości przez WhatsApp</p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={notifPrefs.whatsapp_enabled}
+                      onCheckedChange={(checked) =>
+                        setNotifPrefs(prev => ({ ...prev, whatsapp_enabled: checked }))
+                      }
+                    />
+                  </div>
+
+                  {notifPrefs.whatsapp_enabled && (
+                    <div className="ml-8 space-y-2">
+                      <Label htmlFor="notif-whatsapp">Numer WhatsApp</Label>
+                      <Input
+                        id="notif-whatsapp"
+                        type="tel"
+                        value={notifPrefs.whatsapp_number}
+                        onChange={(e) =>
+                          setNotifPrefs(prev => ({ ...prev, whatsapp_number: e.target.value }))
+                        }
+                        placeholder="+48 123 456 789"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Notification Types */}
+              {(notifPrefs.email_enabled || notifPrefs.whatsapp_enabled) && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Typy powiadomień</h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="notif-assigned" className="cursor-pointer">Przypisanie zadania</Label>
+                      <Switch
+                        id="notif-assigned"
+                        checked={notifPrefs.notify_task_assigned}
+                        onCheckedChange={(checked) =>
+                          setNotifPrefs(prev => ({ ...prev, notify_task_assigned: checked }))
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="notif-completed" className="cursor-pointer">Ukończenie zadania</Label>
+                      <Switch
+                        id="notif-completed"
+                        checked={notifPrefs.notify_task_completed}
+                        onCheckedChange={(checked) =>
+                          setNotifPrefs(prev => ({ ...prev, notify_task_completed: checked }))
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="notif-overdue" className="cursor-pointer">Zadanie po terminie</Label>
+                      <Switch
+                        id="notif-overdue"
+                        checked={notifPrefs.notify_task_overdue}
+                        onCheckedChange={(checked) =>
+                          setNotifPrefs(prev => ({ ...prev, notify_task_overdue: checked }))
+                        }
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="notif-mentions" className="cursor-pointer">Wzmianki (@mention)</Label>
+                      <Switch
+                        id="notif-mentions"
+                        checked={notifPrefs.notify_mentions}
+                        onCheckedChange={(checked) =>
+                          setNotifPrefs(prev => ({ ...prev, notify_mentions: checked }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Quiet Hours */}
+              {(notifPrefs.email_enabled || notifPrefs.whatsapp_enabled) && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                    <Moon className="h-4 w-4" />
+                    Godziny ciszy
+                  </h3>
+                  <p className="text-xs text-gray-500 mb-3">Powiadomienia nie będą wysyłane w tym przedziale</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="quiet-start">Od</Label>
+                      <Input
+                        id="quiet-start"
+                        type="time"
+                        value={notifPrefs.quiet_hours_start}
+                        onChange={(e) =>
+                          setNotifPrefs(prev => ({ ...prev, quiet_hours_start: e.target.value }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="quiet-end">Do</Label>
+                      <Input
+                        id="quiet-end"
+                        type="time"
+                        value={notifPrefs.quiet_hours_end}
+                        onChange={(e) =>
+                          setNotifPrefs(prev => ({ ...prev, quiet_hours_end: e.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Save button */}
+              <div className="flex justify-end pt-2">
+                <Button onClick={handleNotifSave} disabled={notifSaving}>
+                  {notifSaving ? (
+                    <span className="flex items-center gap-2">
+                      <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                      Zapisuję...
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <Save className="h-4 w-4" />
+                      Zapisz preferencje
+                    </span>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       <div className="mt-6 grid gap-6 md:grid-cols-2">
         <Card className="md:col-span-2">

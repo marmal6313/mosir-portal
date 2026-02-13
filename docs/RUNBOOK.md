@@ -93,11 +93,14 @@ Migracje uruchamiane ręcznie w Supabase SQL Editor **przed** deployem nowej wer
 | Migracja | Weryfikacja | Opis | Data |
 |---|---|---|---|
 | `SQL/migration-user-departments.sql` | `SQL/verify-user-departments-migration.sql` | Multi-department: tabela `user_departments`, RLS, widok, funkcja | 2026-02-12 |
+| `SQL/migration-attendance-schedules.sql` | - | RACS integration: 6 tabel (racs_*, work_schedules, attendance_*) | 2026-02-13 |
+| `SQL/fix-rls-attendance.sql` | - | Fix RLS policies dla attendance_records, attendance_summary | 2026-02-13 |
+| `SQL/migration-user-shift-preferences.sql` | - | Shift preferences: 5 kolumn w users | 2026-02-13 |
 
 Procedura:
 1. Otwórz Supabase Dashboard → SQL Editor.
-2. Wklej treść pliku migracji i wykonaj.
-3. Wklej treść pliku weryfikacyjnego i sprawdź wyniki (wszystkie `OK`).
+2. Wklej treść pliku migracji i wykonaj (w kolejności chronologicznej).
+3. (Jeśli istnieje) Wklej treść pliku weryfikacyjnego i sprawdź wyniki (wszystkie `OK`).
 4. Dopiero potem wdróż nową wersję aplikacji.
 
 ## Szybka diagnostyka (K3s)
@@ -194,5 +197,6 @@ sudo systemctl restart k3s-agent  # na worker nodes
 ## Historia release'ów
 | Tag | Data | Opis |
 |---|---|---|
+| `release-250213` | 2026-02-13 | 3 schedule views, shift preferences, multi-department task fix, RACS integration |
 | `release-250212` | 2026-02-12 | Multi-department, infra fixes, Flannel recovery |
 | `release-20251124` | 2025-11-24 | Poprzedni stabilny release |

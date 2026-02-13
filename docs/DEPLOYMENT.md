@@ -1,7 +1,7 @@
 **Cel**
 - Stabilna produkcja, wygodny rozwój, cotygodniowe wydania w poniedziałek, obserwowalność i proste roll‑backi.
 
-**Aktualny release:** `release-250212` (2026-02-12) — multi-department, infra fixes.
+**Aktualny release:** `release-250213` (2026-02-13) — 3 schedule views, shift preferences, multi-department task fix, RACS integration.
 
 **Architektura (obecna produkcja — k3s)**
 - **Aplikacja**: Next.js, pakowana jako obraz Docker (z `Dockerfile`) i uruchamiana w klastrze k3s.
@@ -152,6 +152,9 @@
   |---|---|---|
   | `SQL/migration-user-departments.sql` | Tabela `user_departments`, zaktualizowane RLS, widok, funkcja | 2026-02-12 |
   | `SQL/verify-user-departments-migration.sql` | Weryfikacja poprawności migracji multi-department | 2026-02-12 |
+  | `SQL/migration-attendance-schedules.sql` | RACS integration: 6 tabel (racs_*, work_schedules, attendance_*) | 2026-02-13 |
+  | `SQL/fix-rls-attendance.sql` | Fix RLS policies dla attendance_records, attendance_summary | 2026-02-13 |
+  | `SQL/migration-user-shift-preferences.sql` | Shift preferences: 5 kolumn w users (shift config) | 2026-02-13 |
 
 **Funkcjonalność: Multi-department (release-250212)**
 - Użytkownicy mogą być przypisani do wielu działów jednocześnie.
@@ -168,3 +171,53 @@
   - `app/dashboard/users/page.tsx` — UI multi-select
   - `app/api/users/create/route.ts`, `app/api/users/update/route.ts` — API
   - `types/database.ts` — typy TypeScript
+
+**Funkcjonalność: 3 Schedule Views (release-250213)**
+- 3 różne widoki grafików pracy z możliwością przełączania za pomocą tabów
+- **Excel-like Grid View**: tabela ze wszystkimi pracownikami jako wierszami, dni jako kolumny, sticky nazwa pracownika, automatyczne sumowanie godzin
+- **Timeline/Gantt View**: wizualizacja bloków zmianowych na osi czasu, kolorowe bloki, edycja inline
+- **Weekly Cards View**: istniejący widok kart z pełnymi szczegółami dla każdego pracownika
+- Wszystkie widoki wspierają: filtrowanie po dziale, wyszukiwanie, wypełnianie standardem, kopiowanie tygodni
+- Pliki:
+  - `app/dashboard/schedules/page.tsx` — 3 widoki z Tabs
+  - `components/ui/tabs.tsx` — komponent tabs
+  - `docs/RELEASE-NOTES-250213.md` — dokumentacja
+
+**Funkcjonalność: Shift Preferences (release-250213)**
+- Konfiguracja rodzaju pracownika i dozwolonych typów zmian
+- 5 nowych kolumn w tabeli `users`: `is_office_worker`, `default_shift_start`, `default_shift_end`, `default_shift_type`, `allowed_shift_types`
+- Dropdown wyboru zmiany pokazuje tylko dozwolone typy dla danego użytkownika
+- Przycisk "+ Standard" używa preferencji użytkownika (nie zawsze 8:00-16:00)
+- Badge "Biuro" przy pracownikach biurowych
+- UI w `/dashboard/users` do konfiguracji preferencji
+- Pliki:
+  - `SQL/migration-user-shift-preferences.sql` — migracja
+  - `app/dashboard/schedules/page.tsx` — wykorzystanie preferencji
+  - `app/dashboard/users/page.tsx` — UI konfiguracji
+  - `app/api/users/update/route.ts` — API
+  - `docs/shift-preferences-setup.md` — dokumentacja
+
+**Funkcjonalność: Multi-Department Task Creation Fix (release-250213)**
+- Naprawa błędu gdzie użytkownicy z wieloma działami nie mogli tworzyć zadań dla wszystkich swoich działów
+- Formularz tworzenia zadania teraz pobiera wszystkie działy użytkownika z `user_departments`
+- Dropdown "Dział" pokazuje wszystkie działy użytkownika (nie tylko główny)
+- Badge'e w nagłówku pokazują wszystkie działy użytkownika
+- Domyślny dział ustawiany na pierwszy (primary) z listy
+- Pliki:
+  - `app/dashboard/tasks/add-task/page.tsx` — fix
+  - `docs/fix-multi-department-task-creation.md` — dokumentacja
+
+**Funkcjonalność: RACS Integration (release-250213)**
+- Pełna integracja z systemem kontroli dostępu Roger RACS-5
+- Backend: 6 nowych tabel, RACS SOAP client, sync service, 11 API endpoints
+- Frontend: Attendance dashboard (2 tryby: summary/records), Schedules dashboard (3 widoki)
+- Mock RACS server dla development z 13 rzeczywistymi użytkownikami MOSiR i ~900 eventami
+- Pliki:
+  - `SQL/migration-attendance-schedules.sql` — główna migracja
+  - `SQL/fix-rls-attendance.sql` — fix RLS
+  - `lib/racs-client.ts`, `lib/racs-sync.ts` — backend
+  - `app/dashboard/attendance/page.tsx` — UI
+  - `app/dashboard/schedules/page.tsx` — rozbudowany
+  - `scripts/mock-racs-server.js` — mock server
+  - `docs/racs-integration-setup.md` — dokumentacja setup
+  - `docs/roger-racs5-integration.md` — główna dokumentacja

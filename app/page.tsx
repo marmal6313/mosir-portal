@@ -14,7 +14,7 @@ export default function Home() {
 
     const fallbackTimer = setTimeout(() => {
       if (!resolved && isMounted) {
-        console.warn('Auth check timed out, clearing local session and redirecting to /login')
+        console.warn('Auth check timed out after 10s, clearing local session and redirecting to /login')
         setStatusMessage('Sesja wygasła lub jest nieaktualna. Czyszczę dane i przenoszę do logowania...')
         supabase.auth
           .signOut({ scope: 'local' })
@@ -23,10 +23,16 @@ export default function Home() {
           })
         router.replace('/login')
       }
-    }, 4000)
+    }, 10000)
+
+    const startTime = Date.now()
+    console.log('Starting auth session check...')
 
     supabase.auth.getSession()
       .then(({ data: { session }, error }) => {
+        const duration = Date.now() - startTime
+        console.log(`Auth session check completed in ${duration}ms`)
+
         if (!isMounted) return
         resolved = true
         clearTimeout(fallbackTimer)

@@ -91,7 +91,7 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
 export function useAuth(): AuthContextType {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoadingState] = useState(true)
+  const [loadingState, setLoadingState] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
 
   // Wrapper żeby logować zmiany loading state

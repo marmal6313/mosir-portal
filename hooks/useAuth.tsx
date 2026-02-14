@@ -91,8 +91,14 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
 export function useAuth(): AuthContextType {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoadingState] = useState(true)
   const [authError, setAuthError] = useState<string | null>(null)
+
+  // Wrapper żeby logować zmiany loading state
+  const setLoading = (value: boolean) => {
+    if (DEBUG) console.log(`🔄 setLoading: ${loading} → ${value}`)
+    setLoadingState(value)
+  }
   
   // Ref żeby śledzić czy inicjalizacja jest w toku
   const initializingRef = useRef(false)
@@ -224,7 +230,7 @@ export function useAuth(): AuthContextType {
   return {
     user,
     profile,
-    loading,
+    loading: loadingState,
     authError,
   }
 }

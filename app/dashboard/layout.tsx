@@ -58,7 +58,7 @@ export default function DashboardLayout({
 
     const timer = window.setTimeout(() => {
       setLoadingTimeoutReached(true)
-    }, 8000)
+    }, 30000) // Zwiększono z 8s do 30s dla attendance/schedules
 
     return () => window.clearTimeout(timer)
   }, [loading])

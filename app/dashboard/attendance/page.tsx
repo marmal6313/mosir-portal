@@ -53,7 +53,7 @@ export default function AttendancePage() {
         const { data, error } = await supabase
           .from('users')
           .select('*')
-          .order('full_name')
+          .order('last_name')
 
         if (error) {
           console.error('Error fetching users:', error)

@@ -193,20 +193,26 @@ export function useAuth(): AuthContextType {
     // Nasłuchuj zmian autoryzacji
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (DEBUG) console.log('🔄 useAuth: Zmiana stanu autoryzacji:', event)
-      
+
+      // Ignoruj INITIAL_SESSION - to jest obsłużone w initializeAuth
+      if (event === 'INITIAL_SESSION') {
+        if (DEBUG) console.log('🔄 useAuth: Ignoruję INITIAL_SESSION (obsłużone w initializeAuth)')
+        return
+      }
+
       if (event === 'SIGNED_OUT') {
         setUser(null)
         setProfile(null)
         setAuthError(null)
         profileCache.clear() // Wyczyść cache
         initializedRef.current = false
+        setLoading(false)
       } else if (event === 'SIGNED_IN' && session?.user) {
         setUser(session.user)
         const userProfile = await fetchProfile(session.user.id)
         setProfile(userProfile)
+        setLoading(false)
       }
-      
-      setLoading(false)
     })
 
     return () => {

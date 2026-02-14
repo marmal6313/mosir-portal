@@ -96,7 +96,7 @@ export function useAuth(): AuthContextType {
 
   // Wrapper żeby logować zmiany loading state
   const setLoading = (value: boolean) => {
-    if (DEBUG) console.log(`🔄 setLoading: ${loading} → ${value}`)
+    if (DEBUG) console.log(`🔄 setLoading: ${loadingState} → ${value}`)
     setLoadingState(value)
   }
   

@@ -117,24 +117,43 @@ export default function SchedulesPage() {
   }
 
   async function fetchData() {
-    setLoading(true)
-    await Promise.all([fetchUsers(), fetchDepartments(), fetchSchedules()])
-    setLoading(false)
+    try {
+      setLoading(true)
+      console.log('Fetching schedules data...')
+      await Promise.all([fetchUsers(), fetchDepartments(), fetchSchedules()])
+      console.log('Schedules data fetched successfully')
+    } catch (error) {
+      console.error('Error fetching schedules data:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function fetchUsers() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('users')
       .select('*')
       .order('last_name')
+
+    if (error) {
+      console.error('Error fetching users for schedules:', error)
+      throw error
+    }
+
     if (data) setUsers(data)
   }
 
   async function fetchDepartments() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('departments')
       .select('id, name')
       .order('name')
+
+    if (error) {
+      console.error('Error fetching departments:', error)
+      throw error
+    }
+
     if (data) setDepartments(data)
   }
 
@@ -143,7 +162,7 @@ export default function SchedulesPage() {
     const startDate = formatDate(weekDates[0])
     const endDate = formatDate(weekDates[6])
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('work_schedules')
       .select(`
         *,
@@ -152,6 +171,11 @@ export default function SchedulesPage() {
       .gte('schedule_date', startDate)
       .lte('schedule_date', endDate)
       .order('schedule_date')
+
+    if (error) {
+      console.error('Error fetching schedules:', error)
+      throw error
+    }
 
     setSchedules(data || [])
   }

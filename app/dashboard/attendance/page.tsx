@@ -49,11 +49,21 @@ export default function AttendancePage() {
   // Fetch users
   useEffect(() => {
     async function fetchUsers() {
-      const { data } = await supabase
-        .from('users')
-        .select('*')
-        .order('full_name')
-      if (data) setUsers(data)
+      try {
+        const { data, error } = await supabase
+          .from('users')
+          .select('*')
+          .order('full_name')
+
+        if (error) {
+          console.error('Error fetching users:', error)
+          return
+        }
+
+        if (data) setUsers(data)
+      } catch (error) {
+        console.error('Exception fetching users:', error)
+      }
     }
     fetchUsers()
   }, [])
@@ -64,16 +74,23 @@ export default function AttendancePage() {
   }, [viewMode, dateFrom, dateTo, selectedUser, debouncedSearch])
 
   async function fetchData() {
-    setLoading(true)
+    try {
+      setLoading(true)
+      console.log('Fetching attendance data...')
 
-    if (viewMode === 'records') {
-      await fetchRecords()
-    } else {
-      await fetchSummary()
+      if (viewMode === 'records') {
+        await fetchRecords()
+      } else {
+        await fetchSummary()
+      }
+
+      await fetchStats()
+      console.log('Attendance data fetched successfully')
+    } catch (error) {
+      console.error('Error fetching attendance data:', error)
+    } finally {
+      setLoading(false)
     }
-
-    await fetchStats()
-    setLoading(false)
   }
 
   async function fetchRecords() {
@@ -91,7 +108,12 @@ export default function AttendancePage() {
       query = query.eq('user_id', selectedUser)
     }
 
-    const { data } = await query
+    const { data, error } = await query
+
+    if (error) {
+      console.error('Error fetching attendance records:', error)
+      throw error
+    }
 
     let filtered = data || []
     if (debouncedSearch) {
@@ -120,7 +142,12 @@ export default function AttendancePage() {
       query = query.eq('user_id', selectedUser)
     }
 
-    const { data } = await query
+    const { data, error } = await query
+
+    if (error) {
+      console.error('Error fetching attendance summary:', error)
+      throw error
+    }
 
     let filtered = data || []
     if (debouncedSearch) {
@@ -137,14 +164,24 @@ export default function AttendancePage() {
   async function fetchStats() {
     const today = new Date().toISOString().split('T')[0]
 
-    const { count: totalRecords } = await supabase
+    const { count: totalRecords, error: countError } = await supabase
       .from('attendance_records')
       .select('*', { count: 'exact', head: true })
 
-    const { data: todaySummary } = await supabase
+    if (countError) {
+      console.error('Error fetching attendance count:', countError)
+      throw countError
+    }
+
+    const { data: todaySummary, error: summaryError } = await supabase
       .from('attendance_summary')
       .select('*')
       .eq('date', today)
+
+    if (summaryError) {
+      console.error('Error fetching today summary:', summaryError)
+      throw summaryError
+    }
 
     const presentToday = todaySummary?.filter(s => s.is_present).length || 0
     const lateToday = todaySummary?.filter(s => s.is_late).length || 0

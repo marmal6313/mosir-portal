@@ -10,7 +10,8 @@ import {
   BarChart3, 
   Settings,
   CheckCircle,
-  XCircle
+  XCircle,
+  Loader2
 } from 'lucide-react'
 
 export function PermissionDisplay() {
@@ -37,7 +38,7 @@ export function PermissionDisplay() {
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center p-4">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+            <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
             <span className="ml-2">Ładowanie uprawnień...</span>
           </div>
         </CardContent>

@@ -97,11 +97,11 @@ export default function Sidebar({ profile }: SidebarProps) {
   ]
 
   return (
-    <div className="bg-gradient-to-b from-gray-900 via-gray-800 to-gray-900 text-white w-64 min-h-screen flex flex-col shadow-2xl">
+    <div className="bg-white border-r border-gray-200 text-gray-900 w-64 min-h-screen flex flex-col shadow-lg">
       {/* Logo Section */}
-      <div className="p-4 sm:p-6 border-b border-gray-700/50">
+      <div className="p-4 sm:p-6 border-b border-gray-200">
         <div className="flex items-center space-x-3">
-          <div className="p-2 sm:p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-lg">
+          <div className="p-2 sm:p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl shadow-md">
             <Image 
               src={systemSettings.mosir_logo || '/mosir-logo.svg'} 
               alt="MOSiR Logo" 
@@ -115,10 +115,10 @@ export default function Sidebar({ profile }: SidebarProps) {
             />
           </div>
           <div className="min-w-0">
-            <h1 className="text-lg sm:text-xl font-bold text-white truncate">
+            <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
               {systemSettings.system_name || 'MOSiR Portal'}
             </h1>
-            <p className="text-xs text-blue-300 font-medium truncate">
+            <p className="text-xs text-blue-600 font-medium truncate">
               {systemSettings.company_name || 'System Zarządzania'}
             </p>
           </div>
@@ -140,16 +140,18 @@ export default function Sidebar({ profile }: SidebarProps) {
                     setActiveItem(item.name)
                     router.push(item.href)
                   }}
+                  aria-label={`Navigate to ${item.name}`}
+                  aria-current={isActive ? 'page' : undefined}
                   className={`w-full justify-start h-12 px-3 sm:px-4 text-sm sm:text-base font-medium transition-all duration-200 ${
                     isActive
-                      ? 'bg-blue-600 text-white shadow-lg transform scale-105'
-                      : 'text-gray-300 hover:text-white hover:bg-gray-700/50'
+                      ? 'bg-blue-50 text-blue-700 border-l-4 border-blue-600 shadow-sm'
+                      : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100 border-l-4 border-transparent'
                   }`}
                 >
-                  <Icon className="h-4 w-4 sm:h-5 sm:w-5 mr-3 flex-shrink-0" />
+                  <Icon className="h-4 w-4 sm:h-5 sm:w-5 mr-3 flex-shrink-0" aria-hidden="true" />
                   <span className="truncate">{item.name}</span>
                   {isActive && (
-                    <div className="ml-auto w-2 h-2 bg-white rounded-full"></div>
+                    <div className="ml-auto w-2 h-2 bg-blue-600 rounded-full" aria-hidden="true"></div>
                   )}
                 </Button>
               </li>
@@ -159,26 +161,26 @@ export default function Sidebar({ profile }: SidebarProps) {
       </nav>
 
       {/* User Profile Section */}
-      <div className="p-3 sm:p-4 border-t border-gray-700/50">
+      <div className="p-3 sm:p-4 border-t border-gray-200">
         <div className="flex items-center space-x-3 mb-3">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-400 to-blue-500 rounded-full flex items-center justify-center">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
             <UserCircle className="h-5 w-5 sm:h-6 sm:w-6 text-white" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm sm:text-base font-medium text-white truncate">
+            <p className="text-sm sm:text-base font-medium text-gray-900 truncate">
               {profile?.full_name || 'Użytkownik'}
             </p>
             <div className="flex items-center space-x-2">
-              <Badge 
-                variant="secondary" 
-                className="text-xs px-2 py-1 bg-blue-600/20 text-blue-300 border-blue-500/30"
+              <Badge
+                variant="secondary"
+                className="text-xs px-2 py-1 bg-blue-50 text-blue-700 border-blue-200"
               >
                 {profile?.role || 'user'}
               </Badge>
               {profile?.department_name && (
-                <Badge 
-                  variant="outline" 
-                  className="text-xs px-2 py-1 border-gray-600 text-gray-300"
+                <Badge
+                  variant="outline"
+                  className="text-xs px-2 py-1 border-gray-300 text-gray-700"
                 >
                   {profile.department_name}
                 </Badge>
@@ -190,7 +192,7 @@ export default function Sidebar({ profile }: SidebarProps) {
         <Button
           variant="ghost"
           onClick={handleLogout}
-          className="w-full justify-start h-10 px-3 text-sm text-gray-300 hover:text-white hover:bg-gray-700/50"
+          className="w-full justify-start h-10 px-3 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100"
         >
           <LogOut className="h-4 w-4 mr-3" />
           Wyloguj

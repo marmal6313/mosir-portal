@@ -8,6 +8,7 @@ import Sidebar from '@/components/layouts/Sidebar'
 import Header from '@/components/layouts/Header'
 import { Building2 } from 'lucide-react'
 import { AuthErrorProvider } from '@/components/AuthErrorProvider'
+import { SkipLink } from '@/components/ui/skip-link'
 
 export default function DashboardLayout({
   children,
@@ -102,6 +103,7 @@ export default function DashboardLayout({
 
   return (
     <AuthErrorProvider authError={authError}>
+      <SkipLink />
       <div className="flex h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100">
         {/* Mobile Sidebar Overlay */}
         {sidebarOpen && (
@@ -119,7 +121,7 @@ export default function DashboardLayout({
         {/* Main Content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <Header user={user} profile={profile as Database["public"]["Views"]["users_with_details"]["Row"] | null} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-          <main className="flex-1 overflow-x-hidden overflow-y-auto bg-transparent">
+          <main id="main-content" className="flex-1 overflow-x-hidden overflow-y-auto bg-transparent">
             {children}
           </main>
         </div>

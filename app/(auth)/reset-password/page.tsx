@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Mail, ArrowLeft, CheckCircle, AlertCircle } from 'lucide-react'
+import { Mail, ArrowLeft, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 
 export default function ResetPassword() {
   const [email, setEmail] = useState('')
@@ -111,7 +111,7 @@ export default function ResetPassword() {
             >
               {loading ? (
                 <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
                   Wysyłanie...
                 </div>
               ) : (

@@ -31,6 +31,7 @@ import {
   Eye
 } from 'lucide-react'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { TableSkeleton } from '@/components/ui/skeleton'
 
 type TaskWithDetails = Database['public']['Views']['tasks_with_details']['Row']
 
@@ -647,10 +648,10 @@ export default function DashboardTaskList() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100 p-4 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Ładowanie zadań...</p>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100 p-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-6 h-8 w-48 bg-gray-200 rounded animate-pulse"></div>
+          <TableSkeleton rows={15} />
         </div>
       </div>
     )

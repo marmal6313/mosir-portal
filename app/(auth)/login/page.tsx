@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { Lock, Mail, Eye, EyeOff, Building2, Users, CheckCircle } from 'lucide-react'
+import { Lock, Mail, Eye, EyeOff, Building2, Users, CheckCircle, Loader2 } from 'lucide-react'
 import Image from 'next/image'
 
 
@@ -260,7 +260,7 @@ export default function Login() {
                 >
                   {loading ? (
                     <div className="flex items-center justify-center">
-                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                      <Loader2 className="h-5 w-5 mr-2 animate-spin" />
                       Logowanie...
                     </div>
                   ) : (

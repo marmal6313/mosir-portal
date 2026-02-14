@@ -14,6 +14,7 @@ import { useAuthContext } from '@/hooks/useAuth'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { getStatusLabel, getPriorityLabel, getStatusColor, getPriorityColor } from '@/lib/tasks-utils'
 import { useRouter } from 'next/navigation'
+import { TableSkeleton } from '@/components/ui/skeleton'
 
 // ===== Date helpers — stabilne dla Gantta =====
 // "YYYY-MM-DD" ?
@@ -811,10 +812,7 @@ const GanttPage = () => {
   if (localLoading) {
     return (
       <div className="p-8">
-        <div className="flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          <span className="ml-3 text-lg">Ładowanie danych...</span>
-        </div>
+        <TableSkeleton rows={10} />
       </div>
     )
   }

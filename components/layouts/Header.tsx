@@ -113,9 +113,10 @@ export default function Header({ user, profile, onMenuClick }: HeaderProps) {
             variant="ghost"
             size="sm"
             onClick={onMenuClick}
+            aria-label="Open navigation menu"
             className="lg:hidden p-2 hover:bg-gray-100"
           >
-            <Menu className="h-5 w-5" />
+            <Menu className="h-5 w-5" aria-hidden="true" />
           </Button>
           
           <div className="hidden sm:block">
@@ -123,9 +124,9 @@ export default function Header({ user, profile, onMenuClick }: HeaderProps) {
               Witaj, {profile?.first_name}!
             </h2>
             <Badge variant="secondary" className="text-xs px-3 py-1 bg-gradient-to-r from-blue-100 to-purple-100 text-blue-800 border-blue-200 mt-1">
-              {profile?.role === 'dyrektor' ? '👑 Dyrektor' : 
-               profile?.role === 'kierownik' ? '👨‍💼 Kierownik' : 
-               profile?.role === 'superadmin' ? '🔴 Super Admin' : '👷 Pracownik'}
+              {profile?.role === 'dyrektor' ? 'Dyrektor' :
+               profile?.role === 'kierownik' ? 'Kierownik' :
+               profile?.role === 'superadmin' ? 'Super Admin' : 'Pracownik'}
             </Badge>
           </div>
           
@@ -141,12 +142,13 @@ export default function Header({ user, profile, onMenuClick }: HeaderProps) {
         <div className="flex items-center gap-2 sm:gap-4">
           {/* Search Bar - hidden on mobile */}
           <div className="hidden md:block relative group" ref={searchRef}>
-            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
+            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" aria-hidden="true" />
             <Input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Szukaj zadań, użytkowników..."
+              aria-label="Search tasks and users"
               className="pl-10 w-64 lg:w-80 border-gray-200 focus:border-blue-500 focus:ring-blue-500 transition-all duration-300 shadow-sm hover:shadow-md"
             />
             
@@ -246,6 +248,9 @@ export default function Header({ user, profile, onMenuClick }: HeaderProps) {
           <div className="relative" ref={dropdownRef}>
             <button
               onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              aria-label="User menu"
+              aria-expanded={isDropdownOpen}
+              aria-haspopup="true"
               className="flex items-center space-x-2 p-2 rounded-xl hover:bg-blue-50 hover:border-blue-200 border-2 border-transparent transition-all duration-300 group"
             >
               <Avatar className="h-8 w-8 sm:h-10 sm:w-10 ring-2 ring-blue-500 group-hover:ring-blue-600 transition-all">

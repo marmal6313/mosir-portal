@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import { GanttChart, type GanttItem } from '@/components/GanttChart'
 import { logger } from '@/lib/logger'
+import { TableSkeleton, CardSkeleton } from '@/components/ui/skeleton'
 
 type TaskWithDetails = Database['public']['Views']['tasks_with_details']['Row']
 
@@ -394,10 +395,18 @@ export default function DashboardPage() {
 
   if (!profile) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Ładowanie...</p>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="mb-8">
+            <div className="h-8 w-48 bg-gray-200 rounded animate-pulse mb-4"></div>
+            <div className="h-4 w-64 bg-gray-200 rounded animate-pulse"></div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            {[...Array(4)].map((_, i) => (
+              <CardSkeleton key={i} />
+            ))}
+          </div>
+          <CardSkeleton />
         </div>
       </div>
     )
@@ -564,10 +573,7 @@ export default function DashboardPage() {
             
             <div className="divide-y divide-gray-100">
               {isLoading ? (
-                <div className="p-8 sm:p-12 text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                  <p className="text-gray-600">Ładowanie zadań...</p>
-                </div>
+                <TableSkeleton rows={10} />
               ) : visibleTasks.length === 0 ? (
                 <div className="p-8 sm:p-12 text-center">
                   <BarChart3 className="h-12 w-12 text-gray-300 mx-auto mb-4" />
@@ -688,9 +694,8 @@ export default function DashboardPage() {
             
             <div className="p-4">
               {isLoading ? (
-                <div className="p-8 text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                  <p className="text-gray-600">Ładowanie harmonogramu...</p>
+                <div className="p-4">
+                  <TableSkeleton rows={8} />
                 </div>
               ) : ganttItems.length === 0 ? (
                 <div className="p-8 text-center">

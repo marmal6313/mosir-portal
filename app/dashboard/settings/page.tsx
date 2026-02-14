@@ -25,6 +25,7 @@ import {
 import { PermissionDisplay } from '@/components/permissions/PermissionDisplay'
 import { PermissionsDashboard } from '@/components/permissions/PermissionsDashboard'
 import { useRouter } from 'next/navigation'
+import { FormSkeleton, Skeleton } from '@/components/ui/skeleton'
 
 interface SystemSetting {
   id: string
@@ -142,9 +143,10 @@ export default function SettingsPage() {
 
     if (loading) {
       return (
-        <div className="text-center py-8">
-          <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-blue-600" />
-          <p className="text-gray-600">Ładowanie ikon...</p>
+        <div className="py-4 space-y-3">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
         </div>
       )
     }
@@ -268,9 +270,9 @@ export default function SettingsPage() {
 
     if (loading) {
       return (
-        <div className="text-center py-8">
-          <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2 text-blue-600" />
-          <p className="text-gray-600">Ładowanie plików...</p>
+        <div className="py-4 space-y-3">
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
         </div>
       )
     }
@@ -693,10 +695,10 @@ export default function SettingsPage() {
 
   if (loading || loadingSettings) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100 p-4 flex items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4 text-blue-600" />
-          <p className="text-gray-600">Ładowanie ustawień...</p>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-gray-100 p-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="mb-6 h-8 w-48 bg-gray-200 rounded animate-pulse"></div>
+          <FormSkeleton fields={8} />
         </div>
       </div>
     )
@@ -809,7 +811,7 @@ export default function SettingsPage() {
                     </label>
                     {uploading && (
                       <div className="flex items-center space-x-2 text-sm text-blue-600">
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
                         <span>Uploadowanie...</span>
                       </div>
                     )}
@@ -892,7 +894,7 @@ export default function SettingsPage() {
                   </label>
                   {uploading && (
                     <div className="flex items-center space-x-2 text-sm text-blue-600">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
                       <span>Uploadowanie...</span>
                     </div>
                   )}

@@ -27,6 +27,7 @@ import {
   Send
 } from 'lucide-react'
 import Link from 'next/link'
+import { TextSkeleton } from '@/components/ui/skeleton'
 
 type TaskChange = {
   id: string
@@ -1023,9 +1024,8 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
           </div>
           <div className="p-4 sm:p-6 space-y-4 max-h-[420px] overflow-y-auto">
             {loadingComments ? (
-              <div className="text-center py-6">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-500">Ładowanie komentarzy...</p>
+              <div className="py-6">
+                <TextSkeleton lines={5} />
               </div>
             ) : comments.length === 0 ? (
               <div className="text-center py-6 text-sm text-gray-500">
@@ -1190,9 +1190,8 @@ export default function TaskDetails({ task }: { task: Omit<Database['public']['V
           
           <div className="p-4 sm:p-6">
             {loadingChanges || loadingComments ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-500">Ładowanie historii...</p>
+              <div className="py-8">
+                <TextSkeleton lines={6} />
               </div>
             ) : timelineEntries.length === 0 ? (
               <div className="text-center py-8">

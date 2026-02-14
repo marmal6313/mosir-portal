@@ -166,7 +166,7 @@ export default function SchedulesPage() {
       .from('work_schedules')
       .select(`
         *,
-        user:users(*)
+        user:users!user_id(*)
       `)
       .gte('schedule_date', startDate)
       .lte('schedule_date', endDate)

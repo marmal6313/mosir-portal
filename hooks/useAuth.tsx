@@ -9,8 +9,8 @@ import type { Database } from '@/types/database'
 
 type Profile = Database["public"]["Views"]["users_with_details"]["Row"]
 
-// Kontrola logów - w development pokazuje wszystko, w production tylko błędy
-const DEBUG = process.env.NODE_ENV === 'development'
+// Kontrola logów - TYMCZASOWO włączone w production dla debugowania
+const DEBUG = true // process.env.NODE_ENV === 'development'
 
 interface AuthContextType {
   user: User | null
@@ -31,7 +31,7 @@ const profileCache = new Map<string, Profile>()
 
 async function fetchProfile(userId: string): Promise<Profile | null> {
   if (DEBUG) console.log('🔍 fetchProfile: Rozpoczynam pobieranie profilu dla użytkownika:', userId)
-  
+
   // Sprawdź cache
   if (profileCache.has(userId)) {
     if (DEBUG) console.log('✅ fetchProfile: Profil z cache:', profileCache.get(userId))
@@ -40,42 +40,48 @@ async function fetchProfile(userId: string): Promise<Profile | null> {
 
   try {
     if (DEBUG) console.log('🔍 fetchProfile: Pobieram profil z bazy...')
-    
-    // Najpierw sprawdź czy widok ma w ogóle jakieś dane
-    const { data: allUsers, error: allUsersError } = await supabase
-      .from('users_with_details')
-      .select('id, email, role')
-      .limit(5)
-    
-    if (DEBUG) console.log('🔍 fetchProfile: Test widoku - wszystkie użytkowniki:', { allUsers, allUsersError })
-    
-    const { data, error } = await supabase
-      .from('users_with_details')
-      .select('*')
-      .eq('id', userId)
-      .single()
 
-    if (DEBUG) console.log('🔍 fetchProfile: Odpowiedź z bazy:', { data, error })
+    // Dodaj timeout 10 sekund
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => {
+        console.warn('⏱️ fetchProfile: Timeout po 10 sekundach')
+        resolve(null)
+      }, 10000)
+    })
 
-    if (error) {
-      console.error('❌ fetchProfile: Błąd pobierania profilu:', error)
-      return null
-    }
+    // Race between fetch and timeout
+    const fetchPromise = (async () => {
+      const { data, error } = await supabase
+        .from('users_with_details')
+        .select('*')
+        .eq('id', userId)
+        .single()
 
-    if (!data) {
-      console.error('❌ fetchProfile: Brak danych profilu')
-      return null
-    }
+      if (DEBUG) console.log('🔍 fetchProfile: Odpowiedź z bazy:', { data, error })
 
-    if (DEBUG) {
-      console.log('✅ fetchProfile: Profil pobrany:', data)
-      console.log('🔑 fetchProfile: Rola:', data.role, 'Typ:', typeof data.role)
-    }
-    
-    // Zapisz w cache
-    profileCache.set(userId, data)
-    
-    return data
+      if (error) {
+        console.error('❌ fetchProfile: Błąd pobierania profilu:', error)
+        return null
+      }
+
+      if (!data) {
+        console.error('❌ fetchProfile: Brak danych profilu')
+        return null
+      }
+
+      if (DEBUG) {
+        console.log('✅ fetchProfile: Profil pobrany:', data)
+        console.log('🔑 fetchProfile: Rola:', data.role, 'Typ:', typeof data.role)
+      }
+
+      // Zapisz w cache
+      profileCache.set(userId, data)
+
+      return data
+    })()
+
+    const result = await Promise.race([fetchPromise, timeoutPromise])
+    return result
   } catch (error) {
     console.error('❌ fetchProfile: Nieoczekiwany błąd podczas pobierania profilu:', error)
     return null

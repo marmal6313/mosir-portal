@@ -63,16 +63,17 @@ export default function DashboardLayout({
     return () => window.clearTimeout(timer)
   }, [loading])
 
-  useEffect(() => {
-    if (!loadingTimeoutReached) return
+  // WYŁĄCZONE: Przekierowanie powoduje problemy z attendance/schedules
+  // useEffect(() => {
+  //   if (!loadingTimeoutReached) return
 
-    const fallbackPath =
-      pathname && pathname.startsWith('/dashboard/tasks/')
-        ? '/dashboard/tasks'
-        : '/dashboard'
+  //   const fallbackPath =
+  //     pathname && pathname.startsWith('/dashboard/tasks/')
+  //       ? '/dashboard/tasks'
+  //       : '/dashboard'
 
-    router.replace(fallbackPath)
-  }, [loadingTimeoutReached, pathname, router])
+  //   router.replace(fallbackPath)
+  // }, [loadingTimeoutReached, pathname, router])
 
   if (loading) {
     return (

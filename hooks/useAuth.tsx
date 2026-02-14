@@ -200,6 +200,12 @@ export function useAuth(): AuthContextType {
         return
       }
 
+      // Ignoruj SIGNED_IN podczas inicjalizacji - initializeAuth już to obsługuje
+      if (event === 'SIGNED_IN' && (initializingRef.current || !initializedRef.current)) {
+        if (DEBUG) console.log('🔄 useAuth: Ignoruję SIGNED_IN podczas inicjalizacji (obsłużone w initializeAuth)')
+        return
+      }
+
       if (event === 'SIGNED_OUT') {
         setUser(null)
         setProfile(null)
@@ -208,6 +214,7 @@ export function useAuth(): AuthContextType {
         initializedRef.current = false
         setLoading(false)
       } else if (event === 'SIGNED_IN' && session?.user) {
+        // Ten przypadek obsłuży tylko późniejsze logowania (np. po wylogowaniu)
         setUser(session.user)
         const userProfile = await fetchProfile(session.user.id)
         setProfile(userProfile)

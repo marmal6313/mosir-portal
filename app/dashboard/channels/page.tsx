@@ -23,7 +23,15 @@ import {
   Send,
   Unlock,
   Users,
+  User,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
+import { usePresence } from '@/hooks/usePresence'
+import { useDirectMessages } from '@/hooks/useDirectMessages'
+import { PresenceIndicator } from '@/components/channels/PresenceIndicator'
+import { DmListItem } from '@/components/channels/DmListItem'
+import { DmMessageView } from '@/components/channels/DmMessageView'
 import {
   Dialog,
   DialogContent,
@@ -154,6 +162,25 @@ export default function ChannelsPage() {
   const [archivingChannelId, setArchivingChannelId] = useState<string | null>(null)
   const initialQueryChannelRef = useRef<string | null>(null)
 
+  // DM & Presence state
+  type ViewMode = 'channel' | 'dm'
+  const [viewMode, setViewMode] = useState<ViewMode>('channel')
+  const [selectedDmId, setSelectedDmId] = useState<string | null>(null)
+  const [allUsers, setAllUsers] = useState<Array<{ id: string; first_name: string | null; last_name: string | null; email: string | null; avatar_url: string | null; active: boolean | null }>>([])
+  const [sectionsCollapsed, setSectionsCollapsed] = useState({ channels: false, dms: false })
+
+  // Hooks
+  const { userPresence, isOnline, getLastSeenText } = usePresence()
+  const {
+    conversations: dmConversations,
+    messages: dmMessages,
+    loading: dmLoading,
+    sending: dmSending,
+    sendMessage: sendDmMessage,
+    getOrCreateDm,
+    refreshConversations,
+  } = useDirectMessages(selectedDmId)
+
   const updateSelectedChannel = useCallback(
     (channelId: string | null, options: { skipUrlUpdate?: boolean } = {}) => {
       setSelectedChannelId(channelId)
@@ -187,12 +214,99 @@ export default function ChannelsPage() {
 
     const params = new URLSearchParams(window.location.search)
     const requested = params.get('channel')
+    const dmRequested = params.get('dm')
 
-    if (requested) {
+    if (dmRequested) {
+      setViewMode('dm')
+      setSelectedDmId(dmRequested)
+    } else if (requested) {
       initialQueryChannelRef.current = requested
       updateSelectedChannel(requested, { skipUrlUpdate: true })
     }
   }, [updateSelectedChannel])
+
+  // Load all users for DM section
+  useEffect(() => {
+    if (!user) return
+
+    const loadAllUsers = async () => {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email, avatar_url, active')
+        .eq('active', true)
+        .neq('id', user.id)
+        .order('last_name')
+
+      if (!error && data) {
+        setAllUsers(data)
+      }
+    }
+
+    loadAllUsers()
+  }, [user])
+
+  // Helper: select a DM conversation
+  const handleSelectDm = useCallback((dmId: string) => {
+    setViewMode('dm')
+    setSelectedDmId(dmId)
+    setSelectedChannelId(null)
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams()
+      params.set('dm', dmId)
+      router.replace(`/dashboard/channels?${params.toString()}`, { scroll: false })
+    }
+  }, [router])
+
+  // Helper: select a channel
+  const handleSelectChannel = useCallback((channelId: string) => {
+    setViewMode('channel')
+    setSelectedDmId(null)
+    updateSelectedChannel(channelId)
+  }, [updateSelectedChannel])
+
+  // Helper: start DM with a user
+  const handleStartDm = useCallback(async (otherUserId: string) => {
+    const dmId = await getOrCreateDm(otherUserId)
+    if (dmId) {
+      handleSelectDm(dmId)
+      refreshConversations()
+    }
+  }, [getOrCreateDm, handleSelectDm, refreshConversations])
+
+  // Separate General channel from other channels
+  const generalChannel = useMemo(() => {
+    return channels.find((ch) => ch.name === 'General' && ch.visibility === 'public') ?? null
+  }, [channels])
+
+  const otherChannels = useMemo(() => {
+    return channels.filter((ch) => !(ch.name === 'General' && ch.visibility === 'public'))
+  }, [channels])
+
+  // Sort users: online first, then away, then offline
+  const sortedDmUsers = useMemo(() => {
+    const statusOrder: Record<string, number> = { online: 0, away: 1, offline: 2 }
+
+    // Users who have existing DM conversations
+    const dmUserIds = new Set(dmConversations.map((c) => c.other_user?.id).filter(Boolean))
+
+    // All other users (for starting new DMs)
+    const otherUsers = allUsers.filter((u) => !dmUserIds.has(u.id))
+
+    return otherUsers.sort((a, b) => {
+      const statusA = userPresence.get(a.id)?.status || 'offline'
+      const statusB = userPresence.get(b.id)?.status || 'offline'
+      const orderDiff = (statusOrder[statusA] ?? 2) - (statusOrder[statusB] ?? 2)
+      if (orderDiff !== 0) return orderDiff
+      return (a.last_name || '').localeCompare(b.last_name || '')
+    })
+  }, [allUsers, dmConversations, userPresence])
+
+  // Get current DM conversation for message view
+  const currentDmConversation = useMemo(() => {
+    if (!selectedDmId) return null
+    return dmConversations.find((c) => c.id === selectedDmId) ?? null
+  }, [selectedDmId, dmConversations])
 
   const normalizeMessage = useCallback((message: MessageRecord): MessageWithSender => {
     const sender = (message.sender ?? userCacheRef.current.get(message.sender_id) ?? null) as UserRow | null
@@ -1221,114 +1335,240 @@ export default function ChannelsPage() {
             <div className="flex h-full items-center justify-center text-sm text-gray-500">
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Ładowanie kanałów...
             </div>
-          ) : channels.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-4 text-center text-sm text-gray-500">
-              Brak kanałów. Utwórz pierwszy kanał dla swojego działu.
-            </div>
           ) : (
-            <ul className="space-y-2">
-              {channels.map((channel) => {
-                const isActive = channel.id === selectedChannelId
-                const canManageChannel =
-                  profile?.role === 'superadmin' || profile?.role === 'dyrektor' || channel.created_by === user?.id
+            <div className="space-y-4">
 
-                return (
-                  <li
-                    key={channel.id}
-                    ref={(node) => {
-                      if (node) {
-                        menuRefs.current.set(channel.id, node)
-                      } else {
-                        menuRefs.current.delete(channel.id)
-                      }
+              {/* ====== SECTION 1: MAIN CHAT (General Channel) ====== */}
+              {generalChannel && (
+                <div>
+                  <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                    Główny czat
+                  </h3>
+                  <button
+                    onClick={() => {
+                      handleSelectChannel(generalChannel.id)
+                      setChannelError(null)
+                      closeChannelMenu()
                     }}
-                    className="relative"
+                    className={`w-full rounded-xl border px-4 py-3 text-left transition-all ${
+                      viewMode === 'channel' && selectedChannelId === generalChannel.id
+                        ? 'border-blue-500 bg-gradient-to-r from-blue-500/90 to-blue-600 text-white shadow-lg'
+                        : 'border-transparent bg-white hover:border-blue-200 hover:bg-blue-50'
+                    }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => {
-                          updateSelectedChannel(channel.id)
-                          setChannelError(null)
-                          closeChannelMenu()
-                        }}
-                        className={`flex-1 rounded-xl border px-4 py-3 text-left transition-all ${
-                          isActive
-                            ? 'border-blue-500 bg-gradient-to-r from-blue-500/90 to-blue-600 text-white shadow-lg'
-                            : 'border-transparent bg-white hover:border-blue-200 hover:bg-blue-50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 text-sm font-semibold">
-                          <Hash className="h-4 w-4" />
-                          <span className="truncate">{channel.name}</span>
-                        </div>
-                        {channel.description && (
-                          <p className={`mt-1 text-xs ${isActive ? 'text-blue-50/80' : 'text-gray-500'}`}>
-                            {channel.description}
-                          </p>
-                        )}
-                        <div className={`mt-2 ${isActive ? 'text-blue-100' : 'text-gray-500'}`}>
-                          {channelIndicator(channel)}
-                        </div>
-                      </button>
-
-                      {canManageChannel && (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setChannelMenuOpenId((prev) => (prev === channel.id ? null : channel.id))
-                          }}
-                          className={`flex h-10 w-10 items-center justify-center rounded-lg border transition ${
-                            channelMenuOpenId === channel.id
-                              ? 'border-blue-300 bg-blue-50 text-blue-600'
-                              : 'border-transparent text-gray-500 hover:border-blue-200 hover:bg-blue-50'
-                          }`}
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
-                      )}
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <Hash className="h-4 w-4" />
+                      <span className="truncate">{generalChannel.name}</span>
                     </div>
-
-                    {channelMenuOpenId === channel.id && (
-                      <div className="absolute right-0 top-12 z-30 w-52 rounded-lg border border-gray-200 bg-white p-2 shadow-xl">
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            closeChannelMenu()
-                            updateSelectedChannel(channel.id)
-                            setChannelError(null)
-                            router.push(`/dashboard/channels/${channel.id}/settings`)
-                          }}
-                          className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm hover:bg-gray-100"
-                        >
-                          <span>Ustawienia kanału</span>
-                          <Settings className="h-3 w-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            handleArchiveChannel(channel.id)
-                          }}
-                          className="mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-                          disabled={archivingChannelId === channel.id}
-                        >
-                          {archivingChannelId === channel.id ? 'Archiwizowanie…' : 'Archiwizuj kanał'}
-                          <Archive className="h-3 w-3" />
-                        </button>
-                      </div>
+                    {generalChannel.description && (
+                      <p className={`mt-1 text-xs ${
+                        viewMode === 'channel' && selectedChannelId === generalChannel.id ? 'text-blue-50/80' : 'text-gray-500'
+                      }`}>
+                        {generalChannel.description}
+                      </p>
                     )}
-                  </li>
-                )
-              })}
-            </ul>
+                  </button>
+                </div>
+              )}
+
+              {/* ====== SECTION 2: CHANNELS ====== */}
+              <div>
+                <button
+                  onClick={() => setSectionsCollapsed((prev) => ({ ...prev, channels: !prev.channels }))}
+                  className="mb-2 flex w-full items-center gap-1 px-3 text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-700"
+                >
+                  {sectionsCollapsed.channels ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  Kanały ({otherChannels.length})
+                </button>
+                {!sectionsCollapsed.channels && (
+                  <ul className="space-y-1.5">
+                    {otherChannels.length === 0 ? (
+                      <li className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-3 text-center text-xs text-gray-500">
+                        Brak kanałów
+                      </li>
+                    ) : (
+                      otherChannels.map((channel) => {
+                        const isActive = viewMode === 'channel' && channel.id === selectedChannelId
+                        const canManageChannel =
+                          profile?.role === 'superadmin' || profile?.role === 'dyrektor' || channel.created_by === user?.id
+
+                        return (
+                          <li
+                            key={channel.id}
+                            ref={(node) => {
+                              if (node) {
+                                menuRefs.current.set(channel.id, node as unknown as HTMLDivElement)
+                              } else {
+                                menuRefs.current.delete(channel.id)
+                              }
+                            }}
+                            className="relative"
+                          >
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  handleSelectChannel(channel.id)
+                                  setChannelError(null)
+                                  closeChannelMenu()
+                                }}
+                                className={`flex-1 rounded-xl border px-4 py-2.5 text-left transition-all ${
+                                  isActive
+                                    ? 'border-blue-500 bg-gradient-to-r from-blue-500/90 to-blue-600 text-white shadow-lg'
+                                    : 'border-transparent bg-white hover:border-blue-200 hover:bg-blue-50'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2 text-sm font-semibold">
+                                  {channel.visibility === 'restricted' ? <Lock className="h-3.5 w-3.5" /> : <Hash className="h-3.5 w-3.5" />}
+                                  <span className="truncate">{channel.name}</span>
+                                </div>
+                                {channel.description && (
+                                  <p className={`mt-0.5 text-xs truncate ${isActive ? 'text-blue-50/80' : 'text-gray-500'}`}>
+                                    {channel.description}
+                                  </p>
+                                )}
+                              </button>
+
+                              {canManageChannel && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    setChannelMenuOpenId((prev) => (prev === channel.id ? null : channel.id))
+                                  }}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-lg border transition ${
+                                    channelMenuOpenId === channel.id
+                                      ? 'border-blue-300 bg-blue-50 text-blue-600'
+                                      : 'border-transparent text-gray-400 hover:border-blue-200 hover:bg-blue-50'
+                                  }`}
+                                >
+                                  <MoreVertical className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+
+                            {channelMenuOpenId === channel.id && (
+                              <div className="absolute right-0 top-12 z-30 w-52 rounded-lg border border-gray-200 bg-white p-2 shadow-xl">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    closeChannelMenu()
+                                    handleSelectChannel(channel.id)
+                                    setChannelError(null)
+                                    router.push(`/dashboard/channels/${channel.id}/settings`)
+                                  }}
+                                  className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm hover:bg-gray-100"
+                                >
+                                  <span>Ustawienia kanału</span>
+                                  <Settings className="h-3 w-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleArchiveChannel(channel.id)
+                                  }}
+                                  className="mt-1 flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  disabled={archivingChannelId === channel.id}
+                                >
+                                  {archivingChannelId === channel.id ? 'Archiwizowanie…' : 'Archiwizuj kanał'}
+                                  <Archive className="h-3 w-3" />
+                                </button>
+                              </div>
+                            )}
+                          </li>
+                        )
+                      })
+                    )}
+                  </ul>
+                )}
+              </div>
+
+              {/* ====== SECTION 3: DIRECT MESSAGES ====== */}
+              <div>
+                <button
+                  onClick={() => setSectionsCollapsed((prev) => ({ ...prev, dms: !prev.dms }))}
+                  className="mb-2 flex w-full items-center gap-1 px-3 text-xs font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-700"
+                >
+                  {sectionsCollapsed.dms ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  Wiadomości prywatne
+                </button>
+                {!sectionsCollapsed.dms && (
+                  <div className="space-y-1">
+                    {/* Existing DM conversations */}
+                    {dmConversations.map((conv) => (
+                      <DmListItem
+                        key={conv.id}
+                        conversation={conv}
+                        presenceStatus={(userPresence.get(conv.other_user?.id || '')?.status as 'online' | 'away' | 'offline') || 'offline'}
+                        lastSeenAt={userPresence.get(conv.other_user?.id || '')?.last_seen_at}
+                        isSelected={viewMode === 'dm' && selectedDmId === conv.id}
+                        onClick={() => handleSelectDm(conv.id)}
+                      />
+                    ))}
+
+                    {/* Online users without existing DMs */}
+                    {sortedDmUsers.length > 0 && (
+                      <>
+                        {dmConversations.length > 0 && (
+                          <div className="my-2 border-t border-gray-200" />
+                        )}
+                        <p className="px-3 py-1 text-xs text-gray-400">Rozpocznij rozmowe</p>
+                        {sortedDmUsers.map((u) => {
+                          const status = (userPresence.get(u.id)?.status as 'online' | 'away' | 'offline') || 'offline'
+                          const userName = u.first_name && u.last_name
+                            ? `${u.first_name} ${u.last_name}`
+                            : u.email || 'Unknown'
+                          const initials = u.first_name && u.last_name
+                            ? `${u.first_name[0]}${u.last_name[0]}`.toUpperCase()
+                            : (u.email?.[0] || '?').toUpperCase()
+
+                          return (
+                            <button
+                              key={u.id}
+                              onClick={() => handleStartDm(u.id)}
+                              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-gray-100"
+                            >
+                              <div className="relative flex-shrink-0">
+                                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-gray-400 to-gray-500 text-xs font-medium text-white">
+                                  {initials}
+                                </div>
+                                <div className="absolute bottom-0 right-0 translate-x-0.5 translate-y-0.5">
+                                  <div className="rounded-full bg-white p-0.5">
+                                    <PresenceIndicator status={status} size="sm" showTooltip={false} />
+                                  </div>
+                                </div>
+                              </div>
+                              <span className="text-sm text-gray-700 truncate">{userName}</span>
+                            </button>
+                          )
+                        })}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+            </div>
           )}
         </div>
       </aside>
 
       <section className="flex flex-1 flex-col">
-        {selectedChannel ? (
+        {/* ====== DM MESSAGE VIEW ====== */}
+        {viewMode === 'dm' && selectedDmId ? (
+          <Card className="flex h-full flex-1 flex-col overflow-hidden">
+            <DmMessageView
+              conversation={currentDmConversation}
+              messages={dmMessages}
+              otherUserPresence={(userPresence.get(currentDmConversation?.other_user?.id || '')?.status as 'online' | 'away' | 'offline') || 'offline'}
+              lastSeenAt={userPresence.get(currentDmConversation?.other_user?.id || '')?.last_seen_at}
+              loading={dmLoading}
+              sending={dmSending}
+              onSendMessage={sendDmMessage}
+            />
+          </Card>
+        ) : selectedChannel ? (
           <Card className="flex h-full flex-1 flex-col">
             <CardHeader className="border-b border-gray-100 bg-gradient-to-r from-white to-blue-50 pb-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

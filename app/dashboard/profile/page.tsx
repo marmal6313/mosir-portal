@@ -11,8 +11,8 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Switch } from '@/components/ui/switch'
-import { 
-  Building2, 
+import {
+  Building2,
   Calendar,
   Edit3,
   X,
@@ -25,7 +25,10 @@ import {
   Mail,
   MessageCircle,
   Moon,
-  Save
+  Save,
+  Volume2,
+  Hash,
+  Send
 } from 'lucide-react'
 import { useToast } from '@/hooks/useToast'
 import type { Database } from '@/types/database'
@@ -60,6 +63,9 @@ export default function ProfilePage() {
     notify_task_completed: true,
     notify_task_overdue: true,
     notify_mentions: true,
+    notify_channel_messages: true,
+    notify_dm_messages: true,
+    sound_enabled: true,
     quiet_hours_start: '',
     quiet_hours_end: '',
   })
@@ -189,6 +195,9 @@ export default function ProfilePage() {
           notify_task_completed: data.notify_task_completed ?? true,
           notify_task_overdue: data.notify_task_overdue ?? true,
           notify_mentions: data.notify_mentions ?? true,
+          notify_channel_messages: data.notify_channel_messages ?? true,
+          notify_dm_messages: data.notify_dm_messages ?? true,
+          sound_enabled: data.sound_enabled ?? true,
           quiet_hours_start: data.quiet_hours_start || '',
           quiet_hours_end: data.quiet_hours_end || '',
         })
@@ -222,6 +231,9 @@ export default function ProfilePage() {
         notify_task_completed: notifPrefs.notify_task_completed,
         notify_task_overdue: notifPrefs.notify_task_overdue,
         notify_mentions: notifPrefs.notify_mentions,
+        notify_channel_messages: notifPrefs.notify_channel_messages,
+        notify_dm_messages: notifPrefs.notify_dm_messages,
+        sound_enabled: notifPrefs.sound_enabled,
         quiet_hours_start: notifPrefs.quiet_hours_start || null,
         quiet_hours_end: notifPrefs.quiet_hours_end || null,
       }
@@ -755,6 +767,61 @@ export default function ProfilePage() {
                   </div>
                 </div>
               )}
+
+              {/* Chat Notifications */}
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Powiadomienia czatu</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Hash className="h-5 w-5 text-blue-600" />
+                      <div>
+                        <p className="font-medium text-sm">Wiadomości na kanałach</p>
+                        <p className="text-xs text-gray-500">Powiadomienia o nowych wiadomościach na kanałach</p>
+                      </div>
+                    </div>
+                    <Switch
+                      id="notif-channel"
+                      checked={notifPrefs.notify_channel_messages}
+                      onCheckedChange={(checked) =>
+                        setNotifPrefs(prev => ({ ...prev, notify_channel_messages: checked }))
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Send className="h-5 w-5 text-purple-600" />
+                      <div>
+                        <p className="font-medium text-sm">Wiadomości prywatne (DM)</p>
+                        <p className="text-xs text-gray-500">Powiadomienia o nowych wiadomościach bezpośrednich</p>
+                      </div>
+                    </div>
+                    <Switch
+                      id="notif-dm"
+                      checked={notifPrefs.notify_dm_messages}
+                      onCheckedChange={(checked) =>
+                        setNotifPrefs(prev => ({ ...prev, notify_dm_messages: checked }))
+                      }
+                    />
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Volume2 className="h-5 w-5 text-orange-600" />
+                      <div>
+                        <p className="font-medium text-sm">Dźwięk powiadomienia</p>
+                        <p className="text-xs text-gray-500">Odtwarzaj dźwięk przy nowej wiadomości</p>
+                      </div>
+                    </div>
+                    <Switch
+                      id="notif-sound"
+                      checked={notifPrefs.sound_enabled}
+                      onCheckedChange={(checked) =>
+                        setNotifPrefs(prev => ({ ...prev, sound_enabled: checked }))
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
 
               {/* Quiet Hours */}
               {(notifPrefs.email_enabled || notifPrefs.whatsapp_enabled) && (

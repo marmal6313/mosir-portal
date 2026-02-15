@@ -9,6 +9,8 @@ import Header from '@/components/layouts/Header'
 import { Building2 } from 'lucide-react'
 import { AuthErrorProvider } from '@/components/AuthErrorProvider'
 import { SkipLink } from '@/components/ui/skip-link'
+import { usePresence } from '@/hooks/usePresence'
+import { useChatNotifications } from '@/hooks/useChatNotifications'
 
 export default function DashboardLayout({
   children,
@@ -20,6 +22,12 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const [loadingTimeoutReached, setLoadingTimeoutReached] = useState(false)
+
+  // Presence tracking - runs on every dashboard page
+  usePresence()
+
+  // Chat notifications - sound + toast for incoming messages
+  useChatNotifications()
 
   useEffect(() => {
     if (!loading && !user) {

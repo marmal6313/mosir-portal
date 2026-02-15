@@ -12,6 +12,9 @@ const payloadSchema = z.object({
   notify_task_completed: z.boolean(),
   notify_task_overdue: z.boolean(),
   notify_mentions: z.boolean(),
+  notify_channel_messages: z.boolean().default(true),
+  notify_dm_messages: z.boolean().default(true),
+  sound_enabled: z.boolean().default(true),
   quiet_hours_start: z.string().nullable(),
   quiet_hours_end: z.string().nullable(),
 })
@@ -43,6 +46,9 @@ export async function POST(req: NextRequest) {
       notify_task_completed: p.notify_task_completed,
       notify_task_overdue: p.notify_task_overdue,
       notify_mentions: p.notify_mentions,
+      notify_channel_messages: p.notify_channel_messages,
+      notify_dm_messages: p.notify_dm_messages,
+      sound_enabled: p.sound_enabled,
       quiet_hours_start:
         p.quiet_hours_start && p.quiet_hours_start.trim() ? p.quiet_hours_start.trim() : null,
       quiet_hours_end:

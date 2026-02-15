@@ -264,6 +264,111 @@ export type Database = {
         }
         Relationships: []
       }
+      direct_messages: {
+        Row: {
+          id: string
+          participant_1: string
+          participant_2: string
+          last_message_at: string | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          participant_1: string
+          participant_2: string
+          last_message_at?: string | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          participant_1?: string
+          participant_2?: string
+          last_message_at?: string | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "direct_messages_participant_1_fkey"
+            columns: ["participant_1"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "direct_messages_participant_1_fkey"
+            columns: ["participant_1"]
+            isOneToOne: false
+            referencedRelation: "users_with_details"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "direct_messages_participant_2_fkey"
+            columns: ["participant_2"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "direct_messages_participant_2_fkey"
+            columns: ["participant_2"]
+            isOneToOne: false
+            referencedRelation: "users_with_details"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      direct_message_content: {
+        Row: {
+          id: string
+          dm_id: string
+          sender_id: string
+          content: string
+          metadata: Json | null
+          read_by_recipient: boolean | null
+          created_at: string | null
+        }
+        Insert: {
+          id?: string
+          dm_id: string
+          sender_id: string
+          content: string
+          metadata?: Json | null
+          read_by_recipient?: boolean | null
+          created_at?: string | null
+        }
+        Update: {
+          id?: string
+          dm_id?: string
+          sender_id?: string
+          content?: string
+          metadata?: Json | null
+          read_by_recipient?: boolean | null
+          created_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "direct_message_content_dm_id_fkey"
+            columns: ["dm_id"]
+            isOneToOne: false
+            referencedRelation: "direct_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "direct_message_content_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "direct_message_content_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "users_with_details"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kluby_wsparcie: {
         Row: {
           id: number
@@ -928,6 +1033,42 @@ export type Database = {
             foreignKeyName: "users_manager_id_fkey"
             columns: ["manager_id"]
             isOneToOne: false
+            referencedRelation: "users_with_details"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_presence: {
+        Row: {
+          user_id: string
+          status: string
+          last_seen_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          user_id: string
+          status?: string
+          last_seen_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          user_id?: string
+          status?: string
+          last_seen_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_presence_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_presence_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
             referencedRelation: "users_with_details"
             referencedColumns: ["id"]
           },

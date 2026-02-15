@@ -23,6 +23,9 @@ interface PreferencesRow {
   notify_task_completed: boolean
   notify_task_overdue: boolean
   notify_mentions: boolean
+  notify_channel_messages: boolean
+  notify_dm_messages: boolean
+  sound_enabled: boolean
   quiet_hours_start: string | null
   quiet_hours_end: string | null
 }
@@ -177,6 +180,10 @@ function shouldSendNotificationType(type: string, pref: PreferencesRow): boolean
     case 'mention':
     case 'info':
       return pref.notify_mentions
+    case 'channel_message':
+      return pref.notify_channel_messages
+    case 'dm_message':
+      return pref.notify_dm_messages
     default:
       return true
   }

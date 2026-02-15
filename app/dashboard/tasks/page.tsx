@@ -266,6 +266,7 @@ export default function DashboardTaskList() {
       .from('tasks_with_details')
       .select('*')
       .order('created_at', { ascending: false })
+      .range(0, 4999)
     
     if (profile?.role === 'kierownik' && deptIds.length > 0) {
       // Kierownik widzi zadania ze WSZYSTKICH swoich działów

@@ -97,6 +97,7 @@ export default function DashboardPage() {
         .from('tasks_with_details')
         .select('*')
         .order('created_at', { ascending: false })
+        .range(0, 4999)
 
       // Logika pobierania zadań na podstawie roli
       if (profile.role === 'superadmin' || profile.role === 'dyrektor') {

@@ -253,6 +253,7 @@ const GanttPage = () => {
           assigned_to_name
         `)
         .order('created_at', { ascending: false })
+        .range(0, 4999)
 
       // logika widoczności
       if (profile && (profile.role === 'superadmin' || profile.role === 'dyrektor')) {

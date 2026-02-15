@@ -235,9 +235,9 @@ const GanttPage = () => {
     setError(null)
 
     try {
-      let query = supabase
-        .from('tasks_with_details')
-        .select(`
+      // Paginated fetch - PostgREST max_rows=1000
+      const PAGE_SIZE = 1000
+      const selectFields = `
           id,
           title,
           description,
@@ -251,26 +251,45 @@ const GanttPage = () => {
           department_name,
           assigned_to,
           assigned_to_name
-        `)
-        .order('created_at', { ascending: false })
-        .range(0, 4999)
+        `
+      let allRows: any[] = []
+      let page = 0
+      let hasMore = true
 
-      // logika widoczności
-      if (profile && (profile.role === 'superadmin' || profile.role === 'dyrektor')) {
-        // wszystko
-      } else if (profile?.role === 'kierownik' && profile.department_id) {
-        query = query.eq('department_id', profile.department_id)
-      } else if (profile?.role && profile.department_id) {
-        query = query.eq('department_id', profile.department_id)
+      while (hasMore) {
+        const from = page * PAGE_SIZE
+        const to = from + PAGE_SIZE - 1
+
+        let query = supabase
+          .from('tasks_with_details')
+          .select(selectFields)
+          .order('created_at', { ascending: false })
+          .range(from, to)
+
+        // logika widoczności
+        if (profile && (profile.role === 'superadmin' || profile.role === 'dyrektor')) {
+          // wszystko
+        } else if (profile?.role === 'kierownik' && profile.department_id) {
+          query = query.eq('department_id', profile.department_id)
+        } else if (profile?.role && profile.department_id) {
+          query = query.eq('department_id', profile.department_id)
+        }
+
+        const { data, error: pageError } = await query
+        if (pageError) {
+          setError(`Błąd pobierania zadań: ${pageError.message}`)
+          setGanttTasks([])
+          setFilteredTasks([])
+          return
+        }
+
+        const rows = data || []
+        allRows = allRows.concat(rows)
+        hasMore = rows.length === PAGE_SIZE
+        page++
       }
 
-      const { data: tasks, error: tasksError } = await query
-      if (tasksError) {
-        setError(`Błąd pobierania zadań: ${tasksError.message}`)
-        setGanttTasks([])
-        setFilteredTasks([])
-        return
-      }
+      const tasks = allRows
       if (!tasks || tasks.length === 0) {
         setGanttTasks([])
         setFilteredTasks([])

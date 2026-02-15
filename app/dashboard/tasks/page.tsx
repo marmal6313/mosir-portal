@@ -262,26 +262,41 @@ export default function DashboardTaskList() {
     const deptIds = await fetchUserDepartmentIds(user.id)
     setUserDepartmentIds(deptIds)
     
-    let query = supabase
-      .from('tasks_with_details')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .range(0, 4999)
-    
-    if (profile?.role === 'kierownik' && deptIds.length > 0) {
-      // Kierownik widzi zadania ze WSZYSTKICH swoich działów
-      query = query.in('department_id', deptIds)
-    } else if (profile?.role !== 'dyrektor' && profile?.role !== 'superadmin') {
-      if (deptIds.length > 0) {
-        // Pracownik widzi zadania ze swoich działów + przypisane do niego
-        query = query.or(`department_id.in.(${deptIds.join(',')}),assigned_to.eq.${user.id}`)
-      } else {
-        query = query.eq('assigned_to', user.id)
+    // Paginated fetch - PostgREST max_rows=1000
+    const PAGE_SIZE = 1000
+    let allTasks: TaskWithDetails[] = []
+    let page = 0
+    let hasMore = true
+
+    while (hasMore) {
+      const from = page * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+
+      let query = supabase
+        .from('tasks_with_details')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(from, to)
+
+      if (profile?.role === 'kierownik' && deptIds.length > 0) {
+        query = query.in('department_id', deptIds)
+      } else if (profile?.role !== 'dyrektor' && profile?.role !== 'superadmin') {
+        if (deptIds.length > 0) {
+          query = query.or(`department_id.in.(${deptIds.join(',')}),assigned_to.eq.${user.id}`)
+        } else {
+          query = query.eq('assigned_to', user.id)
+        }
       }
+
+      const { data } = await query
+      const rows = data || []
+      allTasks = allTasks.concat(rows)
+      hasMore = rows.length === PAGE_SIZE
+      page++
     }
-    
-    const { data: tasksData } = await query
-    setTasks(tasksData || [])
+
+    const tasksData = allTasks
+    setTasks(tasksData)
     
     if (tasksData) {
       const uniqueDepartments = [...new Set(

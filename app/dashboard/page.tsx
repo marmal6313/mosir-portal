@@ -93,29 +93,52 @@ export default function DashboardPage() {
     try {
       const timestamp = new Date().toISOString()
       
-      let query = supabase
-        .from('tasks_with_details')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .range(0, 4999)
+      // Paginated fetch - PostgREST max_rows=1000
+      const PAGE_SIZE = 1000
+      let allTasks: TaskWithDetails[] = []
+      let page = 0
+      let hasMore = true
 
-      // Logika pobierania zadań na podstawie roli
-      if (profile.role === 'superadmin' || profile.role === 'dyrektor') {
-        // Dyrektor/Superadmin widzi wszystkie zadania
-      } else if (profile.role === 'kierownik') {
-        // Kierownik widzi zadania swojego działu
-        if (profile.department_id) {
-          query = query.eq('department_id', profile.department_id)
+      while (hasMore) {
+        const from = page * PAGE_SIZE
+        const to = from + PAGE_SIZE - 1
+
+        let query = supabase
+          .from('tasks_with_details')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(from, to)
+
+        // Logika pobierania zadań na podstawie roli
+        if (profile.role === 'superadmin' || profile.role === 'dyrektor') {
+          // Dyrektor/Superadmin widzi wszystkie zadania
+        } else if (profile.role === 'kierownik') {
+          // Kierownik widzi zadania swojego działu
+          if (profile.department_id) {
+            query = query.eq('department_id', profile.department_id)
+          }
+        } else {
+          // Pracownik widzi zadania swojego działu i przypisane do niego
+          if (profile.department_id) {
+            query = query.eq('department_id', profile.department_id)
+          }
+          query = query.or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`)
         }
-      } else {
-        // Pracownik widzi zadania swojego działu i przypisane do niego
-        if (profile.department_id) {
-          query = query.eq('department_id', profile.department_id)
+
+        const { data, error: pageError } = await query
+
+        if (pageError) {
+          throw pageError
         }
-        query = query.or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`)
+
+        const rows = data || []
+        allTasks = allTasks.concat(rows)
+        hasMore = rows.length === PAGE_SIZE
+        page++
       }
 
-      const { data: tasks, error } = await query
+      const tasks = allTasks
+      const error = null
 
       if (error) {
         logger.error('Błąd pobierania zadań:', error)

@@ -374,7 +374,7 @@ export async function autoMapRacsUsers(): Promise<{ success: boolean; mapped: nu
 
       // Find credentials for this person using AccessUserGlobalID
       const personCredentials = credentials.filter(
-        c => c.AccessUserGlobalID === person.ID && !c.Deleted
+        c => c.AccessUserGlobalID === person.GlobalID && !c.Deleted
       );
       const primaryCredential = personCredentials[0]; // Take first active credential
 

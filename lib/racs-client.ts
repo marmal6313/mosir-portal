@@ -57,13 +57,15 @@ export interface RacsPerson {
   FirstName: string;
   LastName: string;
   Email?: string;
+  GlobalID?: string;
   Deleted: boolean;
 }
 
 export interface RacsCredential {
   ID: number;
-  AccessUserGlobalID: number;
   CredentialNumber: string;
+  GlobalID?: string;
+  AccessUserGlobalID?: string;
   Deleted: boolean;
 }
 
@@ -226,11 +228,12 @@ export class RacsClient {
         const name = row.Name || `${firstName} ${lastName}`.trim();
 
         return {
-          ID: row.GlobalID || row.ID,
+          ID: row.ID,
           Name: name,
           FirstName: firstName,
           LastName: lastName,
           Email: row.Email || undefined,
+          GlobalID: row.GlobalID || undefined,
           Deleted: row.Deleted === true || row.Deleted === 1,
         };
       });
@@ -259,8 +262,9 @@ export class RacsClient {
         `);
 
       return result.recordset.map((row: sql.IRecordSet<any>[number]) => ({
-        ID: row.GlobalID || row.ID,
-        AccessUserGlobalID: row.AccessUserGlobalID || 0,
+        ID: row.ID,
+        GlobalID: row.GlobalID || undefined,
+        AccessUserGlobalID: row.AccessUserGlobalID || undefined,
         CredentialNumber: row.Name || '',
         Deleted: row.Deleted === true || row.Deleted === 1,
       }));
@@ -282,7 +286,7 @@ export class RacsClient {
         `);
 
       return result.recordset.map((row: sql.IRecordSet<any>[number]) => ({
-        ID: row.GlobalID || row.ID,
+        ID: row.ID,
         Name: row.Name || '',
         Deleted: row.Deleted === true || row.Deleted === 1,
       }));
@@ -308,7 +312,7 @@ export class RacsClient {
         `);
 
       return result.recordset.map((row: sql.IRecordSet<any>[number]) => ({
-        ID: row.GlobalID || row.ID,
+        ID: row.ID,
         Name: row.Name || '',
         Deleted: row.Deleted === true || row.Deleted === 1,
       }));

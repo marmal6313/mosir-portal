@@ -1,9 +1,19 @@
 /**
  * Roger RACS-5 Access Control System Integration Client
- * Based on RACS 5 Integration Manual v1.6
+ * Direct SQL connection to VISO_Roger database on 192.168.3.5\SQLEXPRESS
+ *
+ * Bypasses the Integration Server SOAP API (requires paid VISO BASE license)
+ * by querying the SQL Server database directly with a read-only user.
+ *
+ * Tables used:
+ *   - AccessUserPersons  (persons/users)
+ *   - AccessCredentials   (credentials/cards)
+ *   - EventLogEntries     (access event log)
+ *   - AccessDoors         (doors/access points)
  */
 
 import { createClient } from '@supabase/supabase-js';
+import sql from 'mssql';
 
 // RACS Event Codes (from documentation)
 export const RACS_EVENT_CODES = {
@@ -16,9 +26,11 @@ export const RACS_EVENT_CODES = {
 } as const;
 
 export interface RacsConfig {
-  serviceUrl: string;
-  username: string;
-  password: string;
+  sqlServer: string;
+  sqlPort: number;
+  sqlDatabase: string;
+  sqlUser: string;
+  sqlPassword: string;
 }
 
 export interface RacsSession {
@@ -35,475 +47,253 @@ export interface RacsEventLogEntry {
   LocationType: number;
   LocationID: number;
   PersonID: number | null;
-  CredentialID: number | null;
+  AccessCredentialID: number | null;
   Description?: string;
 }
 
 export interface RacsPerson {
   ID: number;
+  Name: string;
   FirstName: string;
   LastName: string;
   Email?: string;
-  Active: boolean;
+  Deleted: boolean;
 }
 
 export interface RacsCredential {
   ID: number;
-  PersonID: number;
+  AccessUserGlobalID: number;
   CredentialNumber: string;
-  Active: boolean;
+  Deleted: boolean;
 }
 
 export interface RacsDoor {
   ID: number;
   Name: string;
-  AccessPointID: number;
+  Deleted: boolean;
 }
 
 export class RacsClient {
   private config: RacsConfig;
-  private session: RacsSession | null = null;
+  private pool: sql.ConnectionPool | null = null;
 
   constructor(config: RacsConfig) {
     this.config = config;
   }
 
   /**
-   * Connect to RACS system and obtain session token
+   * Connect to VISO_Roger SQL Server database
+   * Opens a connection pool for reuse across queries
    */
   async connect(): Promise<string> {
-    const url = `${this.config.serviceUrl}/SessionManagement`;
-
-    const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-               xmlns:sess="http://www.roger.pl/VISO/SessionManagement">
-  <soap:Body>
-    <sess:Connect>
-      <sess:login>${this.escapeXml(this.config.username)}</sess:login>
-      <sess:password>${this.escapeXml(this.config.password)}</sess:password>
-    </sess:Connect>
-  </soap:Body>
-</soap:Envelope>`;
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': 'http://www.roger.pl/VISO/SessionManagement/ISessionManagement/Connect',
+      const sqlConfig: sql.config = {
+        user: this.config.sqlUser,
+        password: this.config.sqlPassword,
+        server: this.config.sqlServer,
+        port: this.config.sqlPort,
+        database: this.config.sqlDatabase,
+        options: {
+          encrypt: false, // Local network, no TLS
+          trustServerCertificate: true,
+          enableArithAbort: true,
+          instanceName: 'SQLEXPRESS',
         },
-        body: soapEnvelope,
-      });
-
-      if (!response.ok) {
-        throw new Error(`RACS connection failed: ${response.status} ${response.statusText}`);
-      }
-
-      const xmlText = await response.text();
-      const sessionToken = this.extractFromXml(xmlText, 'ConnectResult');
-
-      if (!sessionToken) {
-        throw new Error('Failed to extract session token from response');
-      }
-
-      // Session typically expires after 30 minutes
-      this.session = {
-        sessionToken,
-        expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+        pool: {
+          max: 5,
+          min: 0,
+          idleTimeoutMillis: 30000,
+        },
+        connectionTimeout: 15000,
+        requestTimeout: 30000,
       };
 
-      return sessionToken;
+      this.pool = await sql.connect(sqlConfig);
+      console.log('[RACS] Connected to SQL Server:', this.config.sqlServer);
+      return 'sql-connected';
     } catch (error) {
-      console.error('RACS connection error:', error);
+      console.error('[RACS] SQL connection error:', error);
       throw error;
     }
   }
 
   /**
-   * Disconnect from RACS system
+   * Disconnect from SQL Server
    */
   async disconnect(): Promise<void> {
-    if (!this.session) return;
-
-    const url = `${this.config.serviceUrl}/SessionManagement`;
-
-    const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-               xmlns:sess="http://www.roger.pl/VISO/SessionManagement">
-  <soap:Body>
-    <sess:Disconnect>
-      <sess:session>${this.session.sessionToken}</sess:session>
-    </sess:Disconnect>
-  </soap:Body>
-</soap:Envelope>`;
-
-    try {
-      await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': 'http://www.roger.pl/VISO/SessionManagement/ISessionManagement/Disconnect',
-        },
-        body: soapEnvelope,
-      });
-
-      this.session = null;
-    } catch (error) {
-      console.error('RACS disconnect error:', error);
+    if (this.pool) {
+      await this.pool.close();
+      this.pool = null;
+      console.log('[RACS] Disconnected from SQL Server');
     }
   }
 
   /**
-   * Ensure we have a valid session
+   * Ensure we have a valid connection pool
    */
-  private async ensureSession(): Promise<string> {
-    if (this.session && this.session.expiresAt > new Date()) {
-      return this.session.sessionToken;
+  private async ensureConnection(): Promise<sql.ConnectionPool> {
+    if (!this.pool || !this.pool.connected) {
+      await this.connect();
     }
-    return await this.connect();
-  }
-
-  /**
-   * Get event log entries between two dates
-   */
-  async getEntriesBetweenDates(startDate: Date, endDate: Date): Promise<RacsEventLogEntry[]> {
-    const sessionToken = await this.ensureSession();
-    const url = `${this.config.serviceUrl}/EventLogManagement`;
-
-    const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-               xmlns:evl="http://www.roger.pl/VISO/EventLogManagement">
-  <soap:Body>
-    <evl:GetEntriesBetweenDates>
-      <evl:session>${sessionToken}</evl:session>
-      <evl:startDate>${startDate.toISOString()}</evl:startDate>
-      <evl:endDate>${endDate.toISOString()}</evl:endDate>
-    </evl:GetEntriesBetweenDates>
-  </soap:Body>
-</soap:Envelope>`;
-
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': 'http://www.roger.pl/VISO/EventLogManagement/IEventLogManagement/GetEntriesBetweenDates',
-        },
-        body: soapEnvelope,
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to get event entries: ${response.status}`);
-      }
-
-      const xmlText = await response.text();
-      return this.parseEventLogEntries(xmlText);
-    } catch (error) {
-      console.error('Error getting event entries:', error);
-      throw error;
-    }
+    return this.pool!;
   }
 
   /**
    * Take event entries starting from a specific ID
+   * Replaces SOAP TakeEntriesStartingFrom
    */
-  async takeEntriesStartingFrom(startId: number, count: number = 100): Promise<RacsEventLogEntry[]> {
-    const sessionToken = await this.ensureSession();
-    const url = `${this.config.serviceUrl}/EventLogManagement`;
-
-    const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-               xmlns:evl="http://www.roger.pl/VISO/EventLogManagement">
-  <soap:Body>
-    <evl:TakeEntriesStartingFrom>
-      <evl:session>${sessionToken}</evl:session>
-      <evl:startId>${startId}</evl:startId>
-      <evl:count>${count}</evl:count>
-    </evl:TakeEntriesStartingFrom>
-  </soap:Body>
-</soap:Envelope>`;
-
+  async takeEntriesStartingFrom(startId: number): Promise<RacsEventLogEntry[]> {
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': 'http://www.roger.pl/VISO/EventLogManagement/IEventLogManagement/TakeEntriesStartingFrom',
-        },
-        body: soapEnvelope,
-      });
+      const pool = await this.ensureConnection();
+      const result = await pool.request()
+        .input('startId', sql.Int, startId)
+        .query(`
+          SELECT TOP 1000
+            ID, EventCode, LoggedOn, LoggedOnUtc,
+            SourceType, SourceID,
+            LocationType, LocationID,
+            PersonID, AccessCredentialID,
+            Details, Deleted
+          FROM EventLogEntries
+          WHERE ID > @startId AND (Deleted = 0 OR Deleted IS NULL)
+          ORDER BY ID ASC
+        `);
 
-      if (!response.ok) {
-        throw new Error(`Failed to take event entries: ${response.status}`);
-      }
-
-      const xmlText = await response.text();
-      return this.parseEventLogEntries(xmlText);
+      return result.recordset.map((row: sql.IRecordSet<any>[number]) => ({
+        ID: row.ID,
+        EventCode: row.EventCode || 0,
+        LoggedOn: row.LoggedOnUtc
+          ? new Date(row.LoggedOnUtc).toISOString()
+          : row.LoggedOn
+            ? new Date(row.LoggedOn).toISOString()
+            : '',
+        SourceType: row.SourceType || 0,
+        SourceID: row.SourceID || 0,
+        LocationType: row.LocationType || 0,
+        LocationID: row.LocationID || 0,
+        PersonID: row.PersonID ?? null,
+        AccessCredentialID: row.AccessCredentialID ?? null,
+        Description: row.Details || undefined,
+      }));
     } catch (error) {
-      console.error('Error taking event entries:', error);
+      console.error('[RACS] Error taking event entries:', error);
       throw error;
     }
   }
 
   /**
    * Get last event ID from the log
+   * Replaces SOAP GetLastEntryId
    */
   async getLastEntryId(): Promise<number> {
-    const sessionToken = await this.ensureSession();
-    const url = `${this.config.serviceUrl}/EventLogManagement`;
-
-    const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-               xmlns:evl="http://www.roger.pl/VISO/EventLogManagement">
-  <soap:Body>
-    <evl:GetLastEntryId>
-      <evl:session>${sessionToken}</evl:session>
-    </evl:GetLastEntryId>
-  </soap:Body>
-</soap:Envelope>`;
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': 'http://www.roger.pl/VISO/EventLogManagement/IEventLogManagement/GetLastEntryId',
-        },
-        body: soapEnvelope,
-      });
+      const pool = await this.ensureConnection();
+      const result = await pool.request()
+        .query('SELECT MAX(ID) as LastId FROM EventLogEntries');
 
-      if (!response.ok) {
-        throw new Error(`Failed to get last entry ID: ${response.status}`);
-      }
-
-      const xmlText = await response.text();
-      const lastId = this.extractFromXml(xmlText, 'GetLastEntryIdResult');
-      return parseInt(lastId || '0', 10);
+      return result.recordset[0]?.LastId || 0;
     } catch (error) {
-      console.error('Error getting last entry ID:', error);
+      console.error('[RACS] Error getting last entry ID:', error);
       throw error;
     }
   }
 
   /**
    * Get all persons from RACS system
+   * Replaces SOAP GetPersons
    */
   async getPersons(): Promise<RacsPerson[]> {
-    const sessionToken = await this.ensureSession();
-    const url = `${this.config.serviceUrl}/ConfigurationQuery`;
-
-    const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-               xmlns:cfg="http://www.roger.pl/VISO/ConfigurationQuery">
-  <soap:Body>
-    <cfg:GetPersons>
-      <cfg:session>${sessionToken}</cfg:session>
-    </cfg:GetPersons>
-  </soap:Body>
-</soap:Envelope>`;
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': 'http://www.roger.pl/VISO/ConfigurationQuery/IConfigurationQuery/GetPersons',
-        },
-        body: soapEnvelope,
+      const pool = await this.ensureConnection();
+      const result = await pool.request()
+        .query(`
+          SELECT
+            ID, GlobalID, Name, FirstName, LastName,
+            Email, Deleted
+          FROM AccessUserPersons
+          WHERE IsTemplate = 0 OR IsTemplate IS NULL
+        `);
+
+      return result.recordset.map((row: sql.IRecordSet<any>[number]) => {
+        const firstName = row.FirstName || '';
+        const lastName = row.LastName || '';
+        const name = row.Name || `${firstName} ${lastName}`.trim();
+
+        return {
+          ID: row.GlobalID || row.ID,
+          Name: name,
+          FirstName: firstName,
+          LastName: lastName,
+          Email: row.Email || undefined,
+          Deleted: row.Deleted === true || row.Deleted === 1,
+        };
       });
-
-      if (!response.ok) {
-        throw new Error(`Failed to get persons: ${response.status}`);
-      }
-
-      const xmlText = await response.text();
-      return this.parsePersons(xmlText);
     } catch (error) {
-      console.error('Error getting persons:', error);
+      console.error('[RACS] Error getting persons:', error);
       throw error;
     }
   }
 
   /**
    * Get credentials from RACS system
+   * Replaces SOAP GetCredentials
+   * Uses AccessCredentials.Name as credential identifier
    */
   async getCredentials(): Promise<RacsCredential[]> {
-    const sessionToken = await this.ensureSession();
-    const url = `${this.config.serviceUrl}/ConfigurationQuery`;
-
-    const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-               xmlns:cfg="http://www.roger.pl/VISO/ConfigurationQuery">
-  <soap:Body>
-    <cfg:GetCredentials>
-      <cfg:session>${sessionToken}</cfg:session>
-    </cfg:GetCredentials>
-  </soap:Body>
-</soap:Envelope>`;
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': 'http://www.roger.pl/VISO/ConfigurationQuery/IConfigurationQuery/GetCredentials',
-        },
-        body: soapEnvelope,
-      });
+      const pool = await this.ensureConnection();
+      const result = await pool.request()
+        .query(`
+          SELECT
+            ID, GlobalID, Name,
+            AccessUserGlobalID,
+            Deleted
+          FROM AccessCredentials
+          WHERE IsTemplate = 0 OR IsTemplate IS NULL
+        `);
 
-      if (!response.ok) {
-        throw new Error(`Failed to get credentials: ${response.status}`);
-      }
-
-      const xmlText = await response.text();
-      return this.parseCredentials(xmlText);
+      return result.recordset.map((row: sql.IRecordSet<any>[number]) => ({
+        ID: row.GlobalID || row.ID,
+        AccessUserGlobalID: row.AccessUserGlobalID || 0,
+        CredentialNumber: row.Name || '',
+        Deleted: row.Deleted === true || row.Deleted === 1,
+      }));
     } catch (error) {
-      console.error('Error getting credentials:', error);
+      console.error('[RACS] Error getting credentials:', error);
       throw error;
     }
   }
 
   /**
    * Get doors from RACS system
+   * Replaces SOAP GetDoors
    */
   async getDoors(): Promise<RacsDoor[]> {
-    const sessionToken = await this.ensureSession();
-    const url = `${this.config.serviceUrl}/ConfigurationQuery`;
-
-    const soapEnvelope = `<?xml version="1.0" encoding="utf-8"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
-               xmlns:cfg="http://www.roger.pl/VISO/ConfigurationQuery">
-  <soap:Body>
-    <cfg:GetDoors>
-      <cfg:session>${sessionToken}</cfg:session>
-    </cfg:GetDoors>
-  </soap:Body>
-</soap:Envelope>`;
-
     try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'text/xml; charset=utf-8',
-          'SOAPAction': 'http://www.roger.pl/VISO/ConfigurationQuery/IConfigurationQuery/GetDoors',
-        },
-        body: soapEnvelope,
-      });
+      const pool = await this.ensureConnection();
+      const result = await pool.request()
+        .query(`
+          SELECT
+            ID, GlobalID, Name, Deleted
+          FROM AccessDoors
+          WHERE IsTemplate = 0 OR IsTemplate IS NULL
+        `);
 
-      if (!response.ok) {
-        throw new Error(`Failed to get doors: ${response.status}`);
-      }
-
-      const xmlText = await response.text();
-      return this.parseDoors(xmlText);
+      return result.recordset.map((row: sql.IRecordSet<any>[number]) => ({
+        ID: row.GlobalID || row.ID,
+        Name: row.Name || '',
+        Deleted: row.Deleted === true || row.Deleted === 1,
+      }));
     } catch (error) {
-      console.error('Error getting doors:', error);
+      console.error('[RACS] Error getting doors:', error);
       throw error;
     }
-  }
-
-  // Helper methods for XML parsing
-  private escapeXml(text: string): string {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  }
-
-  private extractFromXml(xml: string, tagName: string): string | null {
-    const regex = new RegExp(`<${tagName}[^>]*>([^<]*)</${tagName}>`, 'i');
-    const match = xml.match(regex);
-    return match ? match[1] : null;
-  }
-
-  private parseEventLogEntries(xml: string): RacsEventLogEntry[] {
-    const entries: RacsEventLogEntry[] = [];
-    const entryRegex = /<EventLogEntryData>([\s\S]*?)<\/EventLogEntryData>/g;
-    let match;
-
-    while ((match = entryRegex.exec(xml)) !== null) {
-      const entryXml = match[1];
-      const entry: RacsEventLogEntry = {
-        ID: parseInt(this.extractFromXml(entryXml, 'ID') || '0', 10),
-        EventCode: parseInt(this.extractFromXml(entryXml, 'EventCode') || '0', 10),
-        LoggedOn: this.extractFromXml(entryXml, 'LoggedOn') || '',
-        SourceType: parseInt(this.extractFromXml(entryXml, 'SourceType') || '0', 10),
-        SourceID: parseInt(this.extractFromXml(entryXml, 'SourceID') || '0', 10),
-        LocationType: parseInt(this.extractFromXml(entryXml, 'LocationType') || '0', 10),
-        LocationID: parseInt(this.extractFromXml(entryXml, 'LocationID') || '0', 10),
-        PersonID: this.parseNullableInt(this.extractFromXml(entryXml, 'PersonID')),
-        CredentialID: this.parseNullableInt(this.extractFromXml(entryXml, 'CredentialID')),
-      };
-      entries.push(entry);
-    }
-
-    return entries;
-  }
-
-  private parsePersons(xml: string): RacsPerson[] {
-    const persons: RacsPerson[] = [];
-    const personRegex = /<PersonData>([\s\S]*?)<\/PersonData>/g;
-    let match;
-
-    while ((match = personRegex.exec(xml)) !== null) {
-      const personXml = match[1];
-      persons.push({
-        ID: parseInt(this.extractFromXml(personXml, 'ID') || '0', 10),
-        FirstName: this.extractFromXml(personXml, 'FirstName') || '',
-        LastName: this.extractFromXml(personXml, 'LastName') || '',
-        Email: this.extractFromXml(personXml, 'Email') || undefined,
-        Active: this.extractFromXml(personXml, 'Active') === 'true',
-      });
-    }
-
-    return persons;
-  }
-
-  private parseCredentials(xml: string): RacsCredential[] {
-    const credentials: RacsCredential[] = [];
-    const credRegex = /<CredentialData>([\s\S]*?)<\/CredentialData>/g;
-    let match;
-
-    while ((match = credRegex.exec(xml)) !== null) {
-      const credXml = match[1];
-      credentials.push({
-        ID: parseInt(this.extractFromXml(credXml, 'ID') || '0', 10),
-        PersonID: parseInt(this.extractFromXml(credXml, 'PersonID') || '0', 10),
-        CredentialNumber: this.extractFromXml(credXml, 'CredentialNumber') || '',
-        Active: this.extractFromXml(credXml, 'Active') === 'true',
-      });
-    }
-
-    return credentials;
-  }
-
-  private parseDoors(xml: string): RacsDoor[] {
-    const doors: RacsDoor[] = [];
-    const doorRegex = /<DoorData>([\s\S]*?)<\/DoorData>/g;
-    let match;
-
-    while ((match = doorRegex.exec(xml)) !== null) {
-      const doorXml = match[1];
-      doors.push({
-        ID: parseInt(this.extractFromXml(doorXml, 'ID') || '0', 10),
-        Name: this.extractFromXml(doorXml, 'Name') || '',
-        AccessPointID: parseInt(this.extractFromXml(doorXml, 'AccessPointID') || '0', 10),
-      });
-    }
-
-    return doors;
-  }
-
-  private parseNullableInt(value: string | null): number | null {
-    if (!value || value === 'null' || value === '') return null;
-    return parseInt(value, 10);
   }
 }
 
 /**
  * Get RACS client instance from database config
+ * Reads SQL connection details from racs_integration_config in Supabase
  */
 export async function getRacsClient(): Promise<RacsClient | null> {
   const supabase = createClient(
@@ -518,16 +308,15 @@ export async function getRacsClient(): Promise<RacsClient | null> {
     .single();
 
   if (!config) {
-    console.warn('No active RACS integration config found');
+    console.warn('[RACS] No active RACS integration config found');
     return null;
   }
 
-  // In production, decrypt the password here
-  const password = config.password_encrypted; // TODO: Implement decryption
-
   return new RacsClient({
-    serviceUrl: config.service_url,
-    username: config.username,
-    password: password,
+    sqlServer: config.service_url, // Now stores SQL Server host (192.168.3.5)
+    sqlPort: 1434,
+    sqlDatabase: 'VISO_Roger',
+    sqlUser: config.username,
+    sqlPassword: config.password_encrypted, // TODO: Implement proper decryption
   });
 }

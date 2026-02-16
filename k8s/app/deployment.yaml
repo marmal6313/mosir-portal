@@ -15,10 +15,12 @@ spec:
       labels:
         app: mosir-portal
     spec:
+      nodeSelector:
+        kubernetes.io/hostname: mosir-virtual
       containers:
         - name: mosir-portal
           image: ghcr.io/marmal6313/mosir-portal:staging
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - containerPort: 3000
               name: http

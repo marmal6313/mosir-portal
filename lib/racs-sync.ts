@@ -65,6 +65,10 @@ export async function syncRacsEvents(): Promise<SyncResult> {
       throw new Error('RACS client not configured');
     }
 
+    // Auto-map RACS users to Portal users
+    console.log('[RACS Sync] Running auto-mapping of users...');
+    await autoMapRacsUsers();
+
     // Get last synced event ID from config
     const { data: config } = await supabase
       .from('racs_integration_config')

@@ -1,6 +1,12 @@
 /**
  * Roger RACS-5 Event Synchronization Service
  * Synchronizes event logs from Roger system to attendance records
+ *
+ * Adapted for production Roger API:
+ *  - TakeEntriesStartingFrom(entryId, sessionToken) — no count param
+ *  - AccessCredentialID instead of CredentialID
+ *  - Deleted instead of Active (inverted logic)
+ *  - AccessUserGlobalID instead of PersonID in credentials
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -41,7 +47,7 @@ export async function syncRacsEvents(): Promise<SyncResult> {
     .single();
 
   if (syncLogError || !syncLog) {
-    console.error('Failed to create sync log:', syncLogError);
+    console.error('[RACS Sync] Failed to create sync log:', syncLogError);
     return {
       success: false,
       eventsProcessed: 0,
@@ -68,10 +74,10 @@ export async function syncRacsEvents(): Promise<SyncResult> {
 
     const startEventId = config?.last_sync_event_id || 0;
 
-    // Get new events from RACS
-    const events = await racsClient.takeEntriesStartingFrom(startEventId + 1, 500);
+    // Get new events from RACS — no count param in production API
+    const events = await racsClient.takeEntriesStartingFrom(startEventId + 1);
 
-    console.log(`Retrieved ${events.length} events from RACS starting from ID ${startEventId + 1}`);
+    console.log(`[RACS Sync] Retrieved ${events.length} events from RACS starting from ID ${startEventId + 1}`);
 
     // Get user mappings
     const { data: mappings } = await supabase
@@ -95,11 +101,30 @@ export async function syncRacsEvents(): Promise<SyncResult> {
 
     // Get door information for better logging
     let doorCache: Map<number, string> = new Map();
+    let pointCache: Map<number, { Name: string }> = new Map();
+
     try {
-      const doors = await racsClient.getDoors();
-      doorCache = new Map(doors.map(d => [d.ID, d.Name]));
+      const [doors, points] = await Promise.all([
+        racsClient.getDoors(),
+        racsClient.getPoints()
+      ]);
+
+      // Filter out deleted doors and populate caches
+      doorCache = new Map(
+        doors
+          .filter(d => !d.Deleted)
+          .map(d => [d.ID, d.Name])
+      );
+
+      pointCache = new Map(
+        points
+          .filter(p => !p.Deleted)
+          .map(p => [p.ID, { Name: p.Name }])
+      );
+
+      console.log(`[RACS Sync] Loaded ${doors.length} doors and ${points.length} access points`);
     } catch (error) {
-      console.warn('Failed to load door information:', error);
+      console.warn('[RACS Sync] Failed to load door/point information:', error);
     }
 
     // Process each event
@@ -116,28 +141,43 @@ export async function syncRacsEvents(): Promise<SyncResult> {
         continue;
       }
 
-      // Find user by person ID or credential ID
+      // Find user by person ID or AccessCredentialID
       let userId: string | undefined;
       if (event.PersonID) {
         userId = personIdToUserId.get(event.PersonID);
       }
-      if (!userId && event.CredentialID) {
-        userId = credentialIdToUserId.get(event.CredentialID);
+      if (!userId && event.AccessCredentialID) {
+        userId = credentialIdToUserId.get(event.AccessCredentialID);
       }
 
       if (!userId) {
-        console.warn(`No user mapping for RACS event ${event.ID}, PersonID: ${event.PersonID}, CredentialID: ${event.CredentialID}`);
+        console.warn(
+          `[RACS Sync] No user mapping for event ${event.ID}, PersonID: ${event.PersonID}, AccessCredentialID: ${event.AccessCredentialID}`
+        );
         eventsSkipped++;
         continue;
       }
 
       // Determine event type
-      const eventType = event.EventCode === RACS_EVENT_CODES.DOOR_ACCESS_GRANTED ? 'entry' : 'denied';
+      let eventType = 'entry'; // Default
+
+      if (event.EventCode === RACS_EVENT_CODES.DOOR_ACCESS_DENIED) {
+        eventType = 'denied';
+      } else {
+        // Check access point name for direction (WE/WEJ = entry, WY/WYJ = exit)
+        const point = pointCache.get(event.SourceID);
+        if (point) {
+          const name = point.Name.toUpperCase();
+          if (name.includes('WY') || name.includes('WYJ')) {
+            eventType = 'exit';
+          }
+        }
+      }
 
       // Get door name
       const doorName = event.LocationID ? doorCache.get(event.LocationID) : undefined;
 
-      // Check if this event already exists
+      // Check if this event already exists (deduplication)
       const { data: existingEvent } = await supabase
         .from('attendance_records')
         .select('id')
@@ -164,7 +204,7 @@ export async function syncRacsEvents(): Promise<SyncResult> {
         });
 
       if (insertError) {
-        console.error(`Failed to insert attendance record for event ${event.ID}:`, insertError);
+        console.error(`[RACS Sync] Failed to insert attendance record for event ${event.ID}:`, insertError);
         eventsSkipped++;
       } else {
         eventsCreated++;
@@ -195,7 +235,7 @@ export async function syncRacsEvents(): Promise<SyncResult> {
     // Disconnect from RACS
     await racsClient.disconnect();
 
-    console.log(`RACS sync completed: ${eventsCreated} created, ${eventsSkipped} skipped, ${eventsProcessed} total`);
+    console.log(`[RACS Sync] Completed: ${eventsCreated} created, ${eventsSkipped} skipped, ${eventsProcessed} total`);
 
     return {
       success: true,
@@ -205,7 +245,7 @@ export async function syncRacsEvents(): Promise<SyncResult> {
       lastEventId,
     };
   } catch (error) {
-    console.error('RACS sync error:', error);
+    console.error('[RACS Sync] Error:', error);
 
     // Update sync log with error
     await supabase
@@ -249,25 +289,23 @@ export async function syncRacsPersons(): Promise<{ success: boolean; count: numb
 
     // Get persons from RACS
     const persons = await racsClient.getPersons();
-    console.log(`Retrieved ${persons.length} persons from RACS`);
+    const activePersons = persons.filter(p => !p.Deleted);
+    console.log(`[RACS Sync] Retrieved ${persons.length} persons (${activePersons.length} active) from RACS`);
 
     // Get credentials from RACS
     const credentials = await racsClient.getCredentials();
-    console.log(`Retrieved ${credentials.length} credentials from RACS`);
+    const activeCredentials = credentials.filter(c => !c.Deleted);
+    console.log(`[RACS Sync] Retrieved ${credentials.length} credentials (${activeCredentials.length} active) from RACS`);
 
     // Disconnect
     await racsClient.disconnect();
 
-    // Store in a temporary table or return for admin review
-    // For now, we'll just return the data
-    // In production, you might want to store this in a staging table
-
     return {
       success: true,
-      count: persons.length,
+      count: activePersons.length,
     };
   } catch (error) {
-    console.error('Failed to sync RACS persons:', error);
+    console.error('[RACS Sync] Failed to sync persons:', error);
     return {
       success: false,
       count: 0,
@@ -278,6 +316,7 @@ export async function syncRacsPersons(): Promise<{ success: boolean; count: numb
 
 /**
  * Auto-map RACS persons to portal users based on name/email matching
+ * Uses Deleted flag (inverted) and AccessUserGlobalID for credential linking
  */
 export async function autoMapRacsUsers(): Promise<{ success: boolean; mapped: number; error?: string }> {
   try {
@@ -312,9 +351,9 @@ export async function autoMapRacsUsers(): Promise<{ success: boolean; mapped: nu
 
     let mappedCount = 0;
 
-    // Try to match persons to users
+    // Try to match persons to users (only non-deleted persons)
     for (const person of persons) {
-      if (!person.Active) continue;
+      if (person.Deleted) continue; // Skip deleted persons
 
       // Find matching user by name or email
       const matchingUser = users.find(u => {
@@ -329,8 +368,10 @@ export async function autoMapRacsUsers(): Promise<{ success: boolean; mapped: nu
 
       if (!matchingUser) continue;
 
-      // Find credentials for this person
-      const personCredentials = credentials.filter(c => c.PersonID === person.ID && c.Active);
+      // Find credentials for this person using AccessUserGlobalID
+      const personCredentials = credentials.filter(
+        c => c.AccessUserGlobalID === person.ID && !c.Deleted
+      );
       const primaryCredential = personCredentials[0]; // Take first active credential
 
       // Check if mapping already exists
@@ -364,7 +405,9 @@ export async function autoMapRacsUsers(): Promise<{ success: boolean; mapped: nu
       }
 
       mappedCount++;
-      console.log(`Mapped RACS person ${person.FirstName} ${person.LastName} to user ${matchingUser.first_name} ${matchingUser.last_name}`);
+      console.log(
+        `[RACS Sync] Mapped RACS person ${person.FirstName} ${person.LastName} → user ${matchingUser.first_name} ${matchingUser.last_name}`
+      );
     }
 
     return {
@@ -372,7 +415,7 @@ export async function autoMapRacsUsers(): Promise<{ success: boolean; mapped: nu
       mapped: mappedCount,
     };
   } catch (error) {
-    console.error('Failed to auto-map RACS users:', error);
+    console.error('[RACS Sync] Failed to auto-map users:', error);
     return {
       success: false,
       mapped: 0,

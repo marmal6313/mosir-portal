@@ -73,6 +73,12 @@ export interface RacsDoor {
   Deleted: boolean;
 }
 
+export interface RacsPoint {
+  ID: number;
+  Name: string;
+  Deleted: boolean;
+}
+
 export class RacsClient {
   private config: RacsConfig;
   private pool: sql.ConnectionPool | null = null;
@@ -264,10 +270,6 @@ export class RacsClient {
     }
   }
 
-  /**
-   * Get doors from RACS system
-   * Replaces SOAP GetDoors
-   */
   async getDoors(): Promise<RacsDoor[]> {
     try {
       const pool = await this.ensureConnection();
@@ -286,6 +288,32 @@ export class RacsClient {
       }));
     } catch (error) {
       console.error('[RACS] Error getting doors:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get access points (readers) from RACS system
+   * Useful for determining direction (IN/OUT) based on name suffix
+   */
+  async getPoints(): Promise<RacsPoint[]> {
+    try {
+      const pool = await this.ensureConnection();
+      const result = await pool.request()
+        .query(`
+          SELECT
+            ID, GlobalID, Name, Deleted
+          FROM AccessPoints
+          WHERE IsTemplate = 0 OR IsTemplate IS NULL
+        `);
+
+      return result.recordset.map((row: sql.IRecordSet<any>[number]) => ({
+        ID: row.GlobalID || row.ID,
+        Name: row.Name || '',
+        Deleted: row.Deleted === true || row.Deleted === 1,
+      }));
+    } catch (error) {
+      console.error('[RACS] Error getting points:', error);
       throw error;
     }
   }

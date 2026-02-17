@@ -103,6 +103,40 @@ export async function syncRacsEvents(): Promise<SyncResult> {
       }
     }
 
+    // Dynamic fallback: map ALL RACS persons by name matching
+    // This handles duplicate RACS persons (same employee, multiple IDs)
+    // that couldn't all be stored in racs_user_mapping (unique user_id constraint)
+    try {
+      const racsPersons = await racsClient.getPersons();
+      const { data: portalUsers } = await supabase
+        .from('users')
+        .select('id, first_name, last_name, email')
+        .eq('active', true);
+
+      if (portalUsers) {
+        let dynamicMapped = 0;
+        for (const person of racsPersons) {
+          if (person.Deleted) continue;
+          if (personIdToUserId.has(person.ID)) continue; // Already mapped
+
+          const matchingUser = portalUsers.find(u =>
+            u.first_name?.toLowerCase() === person.FirstName.toLowerCase() &&
+            u.last_name?.toLowerCase() === person.LastName.toLowerCase()
+          );
+
+          if (matchingUser) {
+            personIdToUserId.set(person.ID, matchingUser.id);
+            dynamicMapped++;
+          }
+        }
+        if (dynamicMapped > 0) {
+          console.log(`[RACS Sync] Dynamically mapped ${dynamicMapped} additional RACS person IDs by name matching`);
+        }
+      }
+    } catch (error) {
+      console.warn('[RACS Sync] Dynamic person mapping fallback failed:', error);
+    }
+
     // Get door information for better logging
     let doorCache: Map<number, string> = new Map();
     let pointCache: Map<number, { Name: string }> = new Map();

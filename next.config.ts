@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 function hostFromUrl(url?: string) {
   try {
@@ -52,16 +53,15 @@ const allowedImageHosts = (process.env.ALLOWED_IMAGE_HOSTS || "")
   .filter(Boolean)
 
 const nextConfig: NextConfig = {
-  // Ignoruj błędy ESLint podczas build'u produkcyjnego (nie blokuj release)
-  // Lint i poprawki można uruchamiać w CI lub lokalnie.
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  // Tymczasowo ignoruj błędy TypeScript podczas build'u (blokowały z powodu docs-portal)
-  // Docelowo wyłączymy to po uporządkowaniu typów / wyłączeniu docs z kompilacji.
+  // ⚠️ TEMPORARY: Ignoring TypeScript errors until Phase 1
+  // We've fixed critical Next.js 15 async issues (cookies, params)
+  // Remaining errors are mostly outdated database types
+  // TODO Phase 1: Regenerate database types and remove this flag
+  // See: docs/TYPESCRIPT-ERRORS-FOUND.md for full list
   typescript: {
     ignoreBuildErrors: true,
   },
+
   // Włączamy output standalone dla Docker (opcjonalnie)
   // output: 'standalone',
   
@@ -109,4 +109,16 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Sentry configuration options
+const sentryWebpackPluginOptions = {
+  // For all available options, see:
+  // https://github.com/getsentry/sentry-webpack-plugin#options
+
+  // Suppresses source map uploading logs during build
+  silent: true,
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+};
+
+// Make sure adding Sentry options is the last code to run before exporting
+export default withSentryConfig(nextConfig, sentryWebpackPluginOptions);

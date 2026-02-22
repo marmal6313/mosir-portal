@@ -1,0 +1,205 @@
+name: Deploy to K3S Production
+
+on:
+  push:
+    tags:
+      - 'release-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to deploy (e.g. release-20250222)'
+        required: true
+      skip_build:
+        description: 'Skip building image (deploy existing tag)'
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_build }}
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.vars.outputs.TAG }}
+      image_ref: ${{ steps.vars.outputs.IMAGE_REF }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set variables
+        id: vars
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "IMAGE_REF=${REGISTRY}/${IMAGE_NAME}:$TAG" >> $GITHUB_OUTPUT
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.vars.outputs.TAG }}
+            type=sha
+            type=raw,value=latest
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+  deploy-k8s:
+    needs: build-and-push
+    if: ${{ always() && (needs.build-and-push.result == 'success' || inputs.skip_build) }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set image reference
+        id: image
+        run: |
+          if [[ "${{ inputs.skip_build }}" == "true" ]]; then
+            TAG="${{ github.event.inputs.tag }}"
+            IMAGE_REF="${REGISTRY}/${IMAGE_NAME}:$TAG"
+          else
+            IMAGE_REF="${{ needs.build-and-push.outputs.image_ref }}"
+          fi
+          echo "IMAGE_REF=$IMAGE_REF" >> $GITHUB_OUTPUT
+          echo "Deploying image: $IMAGE_REF"
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.33.0'
+
+      - name: Configure kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: |
+          mkdir -p $HOME/.kube
+          echo "$KUBECONFIG_B64" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+          # Test connection
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Verify namespace and resources
+        run: |
+          echo "=== Checking namespace ==="
+          kubectl get namespace apps || echo "Namespace 'apps' does not exist"
+
+          echo "=== Current deployment ==="
+          kubectl get deployment mosir-portal -n apps -o wide || echo "No deployment yet"
+
+          echo "=== Current pods ==="
+          kubectl get pods -n apps -l app=mosir-portal || echo "No pods yet"
+
+      - name: Deploy to K3S
+        run: |
+          echo "=== Updating deployment image ==="
+          kubectl set image deployment/mosir-portal \
+            mosir-portal=${{ steps.image.outputs.IMAGE_REF }} \
+            -n apps
+
+          echo "=== Waiting for rollout ==="
+          kubectl rollout status deployment/mosir-portal -n apps --timeout=5m
+
+      - name: Verify deployment
+        run: |
+          echo "=== Deployment status ==="
+          kubectl get deployment mosir-portal -n apps -o wide
+
+          echo "=== Pod status ==="
+          kubectl get pods -n apps -l app=mosir-portal -o wide
+
+          echo "=== Recent events ==="
+          kubectl get events -n apps --sort-by='.lastTimestamp' | tail -20
+
+      - name: Check pod logs
+        if: always()
+        run: |
+          echo "=== Logs from new pods ==="
+          kubectl logs -n apps -l app=mosir-portal --tail=100 --prefix=true || true
+
+      - name: Smoke test
+        run: |
+          echo "=== Testing /api/health endpoint ==="
+          for i in {1..30}; do
+            code=$(curl -sS -o /dev/null -w "%{http_code}" "https://app.e-mosir.pl/api/health" || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "✅ Healthcheck OK (200)"
+              exit 0
+            fi
+            echo "Attempt $i/30: status=$code; retrying in 10s..."
+            sleep 10
+          done
+
+          echo "❌ Healthcheck failed after 30 attempts"
+          echo "Final curl with verbose output:"
+          curl -v "https://app.e-mosir.pl/api/health" || true
+          exit 1
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "=== Deployment failed, rolling back ==="
+          kubectl rollout undo deployment/mosir-portal -n apps
+          kubectl rollout status deployment/mosir-portal -n apps --timeout=3m
+
+          echo "=== Rollback completed ==="
+          kubectl get deployment mosir-portal -n apps -o wide
+          kubectl get pods -n apps -l app=mosir-portal
+
+  notify:
+    needs: [build-and-push, deploy-k8s]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deployment summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build:** ${{ needs.build-and-push.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deploy:** ${{ needs.deploy-k8s.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** ${{ needs.build-and-push.outputs.image_ref || inputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment:** Production (K3S)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [[ "${{ needs.deploy-k8s.result }}" == "success" ]]; then
+            echo "✅ **Deployment successful!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Application is live at: https://app.e-mosir.pl" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Deployment failed**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Check the logs above for details." >> $GITHUB_STEP_SUMMARY
+          fi

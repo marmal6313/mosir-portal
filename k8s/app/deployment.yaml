@@ -15,8 +15,27 @@ spec:
       labels:
         app: mosir-portal
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: mosir-virtual
+      imagePullSecrets:
+        - name: ghcr-secret
+      affinity:
+        # Prefer mosir-virtual (RACS SQL access), but allow other nodes
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - mosir-virtual
+        # Spread replicas across different nodes for HA
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: mosir-portal
+                topologyKey: kubernetes.io/hostname
       containers:
         - name: mosir-portal
           image: ghcr.io/marmal6313/mosir-portal:staging

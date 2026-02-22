@@ -1,13 +1,13 @@
-name: CD
+name: CD (Legacy Docker Compose)
 
 on:
   push:
     tags:
-      - 'release-*'
+      - 'release-legacy-*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag to build/push (e.g. release-20250101)'
+        description: 'Image tag to build/push (e.g. release-legacy-20250101)'
         required: true
 
 env:

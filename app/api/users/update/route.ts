@@ -129,6 +129,21 @@ export async function PATCH(req: NextRequest) {
 
     // Aktualizuj powiązania z działami w user_departments
     if (department_ids !== undefined) {
+      // Pobierz organization_id użytkownika
+      const { data: targetUser } = await admin
+        .from('users')
+        .select('organization_id')
+        .eq('id', id)
+        .single()
+
+      if (!targetUser?.organization_id) {
+        console.error('users.update: Cannot update departments - user has no organization_id')
+        return NextResponse.json({
+          error: 'User has no organization assigned',
+          details: 'Cannot assign departments without organization_id'
+        }, { status: 400 })
+      }
+
       // Usuń istniejące powiązania
       await admin.from('user_departments').delete().eq('user_id', id)
 
@@ -137,12 +152,16 @@ export async function PATCH(req: NextRequest) {
           user_id: id,
           department_id: deptId,
           is_primary: index === 0,
+          organization_id: targetUser.organization_id,
         }))
 
         const { error: deptError } = await admin.from('user_departments').insert(deptRows)
         if (deptError) {
           console.error('users.update: user_departments update failed', deptError)
-          // Nie zwracamy błędu - profil został zaktualizowany
+          return NextResponse.json({
+            error: 'Failed to update user departments',
+            details: deptError.message
+          }, { status: 400 })
         }
       }
 

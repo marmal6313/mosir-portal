@@ -119,20 +119,33 @@ export async function POST(req: NextRequest) {
       : (finalDepartmentId ? [finalDepartmentId] : [])
 
     if (deptIdsToInsert.length > 0) {
-      // Usuń istniejące powiązania
-      await admin.from('user_departments').delete().eq('user_id', authUserId)
-      
-      // Wstaw nowe
-      const deptRows = deptIdsToInsert.map((deptId, index) => ({
-        user_id: authUserId!,
-        department_id: deptId,
-        is_primary: index === 0,
-      }))
-      
-      const { error: deptError } = await admin.from('user_departments').insert(deptRows)
-      if (deptError) {
-        console.error('users.create: user_departments insert failed', deptError)
-        // Nie zwracamy błędu - profil został utworzony
+      // Pobierz organization_id użytkownika
+      const { data: newUser } = await admin
+        .from('users')
+        .select('organization_id')
+        .eq('id', authUserId)
+        .single()
+
+      if (!newUser?.organization_id) {
+        console.error('users.create: Cannot assign departments - user has no organization_id')
+        // Nie zwracamy błędu - profil został utworzony, ale bez działów
+      } else {
+        // Usuń istniejące powiązania
+        await admin.from('user_departments').delete().eq('user_id', authUserId)
+
+        // Wstaw nowe
+        const deptRows = deptIdsToInsert.map((deptId, index) => ({
+          user_id: authUserId!,
+          department_id: deptId,
+          is_primary: index === 0,
+          organization_id: newUser.organization_id,
+        }))
+
+        const { error: deptError } = await admin.from('user_departments').insert(deptRows)
+        if (deptError) {
+          console.error('users.create: user_departments insert failed', deptError)
+          // Nie zwracamy błędu - profil został utworzony
+        }
       }
     }
 

@@ -9,8 +9,8 @@ System zarządzania zadaniami dla Miejskiego Ośrodka Sportu i Rekreacji. Aplika
 | Frontend | Next.js 15 (App Router), React, TypeScript, Tailwind CSS, shadcn/ui |
 | Backend | Next.js API Routes, Supabase (PostgreSQL, Auth, RLS, Storage) |
 | Infrastruktura | K3s (Kubernetes), Cloudflare Tunnel, Tailscale VPN |
-| CI/CD | GitHub Actions → GHCR (Docker) → K3s |
-| Monitoring | Health endpoint (`/api/health`) |
+| CI/CD | GitHub Actions, Vercel (Auto Preview), K3s (Production) |
+| Monitoring | Health endpoint (`/api/health`), Sentry (Error Tracking) |
 
 ## Funkcjonalności
 
@@ -33,19 +33,33 @@ System zarządzania zadaniami dla Miejskiego Ośrodka Sportu i Rekreacji. Aplika
 
 ## Szybki start (development)
 
+Szczegółowy przewodnik: [docs/LOCAL-DEVELOPMENT-GUIDE.md](docs/LOCAL-DEVELOPMENT-GUIDE.md)
+
 ```bash
-# Zainstaluj zależności
+# 1. Sklonuj repozytorium
+git clone https://github.com/marmal6313/mosir-portal.git
+cd mosir-portal
+
+# 2. Zainstaluj zależności
 npm install
 
-# Skopiuj i uzupełnij zmienne środowiskowe
+# 3. Skopiuj i uzupełnij zmienne środowiskowe
 cp .env.example .env.local
-# Uzupełnij NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+# Uzupełnij: NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
 
-# Uruchom serwer dev
+# 4. Uruchom serwer dev
 npm run dev
 ```
 
-Otwórz [http://localhost:3000](http://localhost:3000).
+Otwórz [http://localhost:3000](http://localhost:3000)
+
+### Środowiska
+
+| Środowisko | URL | Trigger | Cel |
+|---|---|---|---|
+| **Local** | http://localhost:3000 | `npm run dev` | Rozwój lokalny |
+| **Test (Vercel)** | [mosir-portal.vercel.app](https://mosir-portal.vercel.app) | Push do GitHub | Preview i testowanie |
+| **Production (K3s)** | https://app.e-mosir.pl | Tag `release-*` | Produkcja |
 
 ## Struktura projektu
 
@@ -68,41 +82,104 @@ Otwórz [http://localhost:3000](http://localhost:3000).
 
 ## Deployment
 
-Produkcja działa na klastrze **K3s** z **Cloudflare Tunnel** jako ingress.
+### Workflow: Local → Test (Vercel) → Production (K3s)
 
-### Wydanie nowej wersji
+```mermaid
+graph LR
+    A[Local Dev] -->|git push| B[GitHub]
+    B -->|auto deploy| C[Vercel Preview]
+    C -->|test OK| D[Merge to main]
+    D -->|tag release-*| E[GitHub Actions]
+    E -->|build Docker| F[GHCR]
+    E -->|kubectl deploy| G[K3s Production]
+    G -->|Cloudflare Tunnel| H[app.e-mosir.pl]
+```
+
+### 1. Rozwój lokalny i testowanie
 
 ```bash
-# 1. Utwórz tag release
-git tag release-YYMMDD && git push origin release-YYMMDD
+# Utwórz branch dla nowej funkcji
+git checkout -b feature/nazwa-funkcji
 
-# 2. Poczekaj na build w GitHub Actions (CD workflow)
+# Commituj zmiany
+git add .
+git commit -m "feat: opis zmian"
 
-# 3. Zastosuj nowy obraz na klastrze
-kubectl set image deployment/mosir-portal \
-  mosir-portal=ghcr.io/marmal6313/mosir-portal:release-YYMMDD -n apps
-
-# 4. Sprawdź rollout
-kubectl rollout status deployment/mosir-portal -n apps
+# Push do GitHub
+git push origin feature/nazwa-funkcji
 ```
+
+**Rezultat:** Vercel automatycznie tworzy **preview URL** dla tego brancha.
+
+### 2. Testowanie na Vercel
+
+Po push do GitHub:
+1. Vercel buduje aplikację
+2. Tworzy unikalny URL (np. `mosir-portal-git-feature-nazwa.vercel.app`)
+3. Link pojawia się w GitHub PR checks
+4. Testuj funkcjonalność na preview URL
+
+### 3. Merge i wdrożenie na produkcję
+
+```bash
+# Po zatwierdzeniu PR, merge do main
+git checkout main
+git pull origin main
+
+# Utwórz release tag
+git tag release-$(date +%y%m%d)
+git push origin release-$(date +%y%m%d)
+```
+
+**Rezultat:** GitHub Actions automatycznie:
+- Buduje obraz Docker
+- Publikuje do GHCR
+- Wdraża na klaster K3s
+- Wykonuje smoke test
 
 ### Migracje SQL
 
-Migracje uruchamiane ręcznie w Supabase SQL Editor **przed** deployem nowej wersji. Pliki w `SQL/`.
+Migracje uruchamiane ręcznie w Supabase SQL Editor **przed** tagiem release. Pliki w `SQL/`.
 
-Szczegóły: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
+### Przewodniki deployment
+
+| Przewodnik | Opis |
+|---|---|
+| [DEPLOYMENT-FLOW.md](DEPLOYMENT-FLOW.md) | **Pełny przewodnik deployment** (Vercel + K3S) |
+| [LOCAL-DEVELOPMENT-GUIDE.md](docs/LOCAL-DEVELOPMENT-GUIDE.md) | Konfiguracja środowiska lokalnego |
+| [VERCEL-SETUP-GUIDE.md](docs/VERCEL-SETUP-GUIDE.md) | Konfiguracja Vercel dla testów |
+| [GITHUB-SECRETS-SETUP.md](docs/GITHUB-SECRETS-SETUP.md) | Konfiguracja GitHub Secrets dla CI/CD |
+| [DEPLOYMENT-ARCHITECTURE.md](docs/DEPLOYMENT-ARCHITECTURE.md) | Architektura deployment na K3s |
+| [k8s/README.md](k8s/README.md) | Kubernetes manifests i konfiguracja |
 
 ## Dokumentacja
 
+### Dla developerów
+
 | Dokument | Opis |
 |---|---|
-| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Pełna dokumentacja wdrożeniowa |
-| [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | Runbook produkcji (diagnostyka, recovery) |
-| [`docs/plan.md`](docs/plan.md) | Plan rozwoju i release rhythm |
-| [`docs/worklog.md`](docs/worklog.md) | Historia zmian |
-| [`k8s/README.md`](k8s/README.md) | Instrukcja K3s manifests |
-| [`DEPLOY.md`](DEPLOY.md) | Legacy Docker Compose deployment |
-| [`docs/adr/`](docs/adr/) | Architecture Decision Records |
+| [LOCAL-DEVELOPMENT-GUIDE.md](docs/LOCAL-DEVELOPMENT-GUIDE.md) | Konfiguracja środowiska lokalnego (Windows/Mac/Linux) |
+| [VERCEL-SETUP-GUIDE.md](docs/VERCEL-SETUP-GUIDE.md) | Konfiguracja środowiska testowego Vercel |
+| [GITHUB-SECRETS-SETUP.md](docs/GITHUB-SECRETS-SETUP.md) | Konfiguracja GitHub Secrets dla CI/CD |
+
+### Dla DevOps
+
+| Dokument | Opis |
+|---|---|
+| [DEPLOYMENT-ARCHITECTURE.md](docs/DEPLOYMENT-ARCHITECTURE.md) | Architektura infrastruktury K3s |
+| [k8s/README.md](k8s/README.md) | Kubernetes manifests i deployment |
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Pełna dokumentacja wdrożeniowa |
+| [RUNBOOK.md](docs/RUNBOOK.md) | Runbook produkcji (diagnostyka, recovery) |
+
+### Inne
+
+| Dokument | Opis |
+|---|---|
+| [plan.md](docs/plan.md) | Plan rozwoju i release rhythm |
+| [worklog.md](docs/worklog.md) | Historia zmian |
+| [adr/](docs/adr/) | Architecture Decision Records |
+| [SAAS-TRANSFORMATION-COMPLETE.md](docs/SAAS-TRANSFORMATION-COMPLETE.md) | Multi-tenant transformation Phase 1 |
+| [PHASE-0-SECURITY-CHECKLIST.md](docs/PHASE-0-SECURITY-CHECKLIST.md) | Kompletny audyt bezpieczeństwa RLS |
 
 ## Aktualny release
 

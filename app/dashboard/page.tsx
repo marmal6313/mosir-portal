@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const [tasks, setTasks] = useState<TaskWithDetails[]>([])
   const [viewMode, setViewMode] = useState<'list' | 'gantt'>('list')
   const [hideCompleted, setHideCompleted] = useState(true)
+  const [tasksToShow, setTasksToShow] = useState(10)
   const [stats, setStats] = useState({
     totalTasks: 0,
     completedTasks: 0,
@@ -52,6 +53,10 @@ export default function DashboardPage() {
     if (!hideCompleted) return tasks
     return tasks.filter((task) => task.status !== 'completed')
   }, [tasks, hideCompleted])
+
+  const handleShowMore = () => {
+    setTasksToShow(prev => prev + 10)
+  }
 
   useEffect(() => {
     if (profile && user) {
@@ -611,7 +616,7 @@ export default function DashboardPage() {
                   </Link>
                 </div>
               ) : (
-                visibleTasks.slice(0, 10).map((task: TaskWithDetails) => (
+                visibleTasks.slice(0, tasksToShow).map((task: TaskWithDetails) => (
                   <div 
                     key={task.id} 
                     className="p-3 sm:p-4 hover:bg-gray-50 transition-colors cursor-pointer group"
@@ -688,6 +693,19 @@ export default function DashboardPage() {
                     </div>
                   </div>
                 ))
+              )}
+
+              {/* Przycisk "Pokaż więcej" */}
+              {!isLoading && visibleTasks.length > tasksToShow && (
+                <div className="p-4 border-t border-gray-100 text-center">
+                  <Button
+                    onClick={handleShowMore}
+                    variant="outline"
+                    className="w-full sm:w-auto"
+                  >
+                    Pokaż więcej ({visibleTasks.length - tasksToShow} pozostałych)
+                  </Button>
+                </div>
               )}
             </div>
           </div>

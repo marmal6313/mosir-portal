@@ -45,12 +45,28 @@ export async function POST(req: NextRequest) {
 
     const admin = createSupabaseAdminClient()
 
+    // First, get the task to retrieve its organization_id
+    const { data: task, error: taskError } = await admin
+      .from('tasks')
+      .select('organization_id')
+      .eq('id', taskId)
+      .single()
+
+    if (taskError || !task) {
+      console.error('tasks.comments: task lookup failed', taskError)
+      return NextResponse.json(
+        { error: 'Task not found', details: taskError?.message ?? 'unknown error' },
+        { status: 404 }
+      )
+    }
+
     const { data: insertedComment, error: insertError } = await admin
       .from('task_comments')
       .insert({
         comment: trimmedComment,
         task_id: taskId,
         user_id: user.id,
+        organization_id: task.organization_id,
       })
       .select(
         `

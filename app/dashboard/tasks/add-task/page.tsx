@@ -143,7 +143,7 @@ export default function AddTaskPage() {
     setLoading(true)
     setError("")
     setSuccess("")
-    
+
     // Pobierz aktualnego użytkownika
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) {
@@ -151,13 +151,21 @@ export default function AddTaskPage() {
       setLoading(false)
       return
     }
-    
+
+    // Pobierz organization_id użytkownika
+    if (!userProfile?.organization_id) {
+      setError("Brak przypisania do organizacji")
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase.from('tasks').insert({
       title: form.title,
       description: form.description,
       department_id: form.department_id ? Number(form.department_id) : null,
       assigned_to: form.assigned_to || null,
       created_by: user.id,
+      organization_id: userProfile.organization_id,
       priority: form.priority,
       status: 'new',
       start_date: form.start_date || null,

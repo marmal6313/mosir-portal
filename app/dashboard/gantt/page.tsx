@@ -235,6 +235,19 @@ const GanttPage = () => {
     setError(null)
 
     try {
+      if (!user) {
+        setLocalLoading(false)
+        return
+      }
+
+      // Pobierz działy użytkownika z user_departments
+      const { data: userDepts } = await supabase
+        .from('user_departments')
+        .select('department_id')
+        .eq('user_id', user.id)
+
+      const userDepartmentIds = userDepts?.map(d => d.department_id) || []
+
       // Paginated fetch - PostgREST max_rows=1000
       const PAGE_SIZE = 1000
       const selectFields = `
@@ -269,10 +282,22 @@ const GanttPage = () => {
         // logika widoczności
         if (profile && (profile.role === 'superadmin' || profile.role === 'dyrektor')) {
           // wszystko
-        } else if (profile?.role === 'kierownik' && profile.department_id) {
-          query = query.eq('department_id', profile.department_id)
-        } else if (profile?.role && profile.department_id) {
-          query = query.eq('department_id', profile.department_id)
+        } else if (profile?.role === 'kierownik') {
+          // Kierownik widzi zadania ze wszystkich swoich działów
+          if (userDepartmentIds.length > 0) {
+            query = query.in('department_id', userDepartmentIds)
+          } else if (profile.department_id) {
+            query = query.eq('department_id', profile.department_id)
+          }
+        } else if (profile?.role) {
+          // Pracownik widzi zadania ze swoich działów i przypisane do niego
+          if (userDepartmentIds.length > 0) {
+            query = query.or(`department_id.in.(${userDepartmentIds.join(',')}),assigned_to.eq.${user.id}`)
+          } else if (profile.department_id) {
+            query = query.or(`department_id.eq.${profile.department_id},assigned_to.eq.${user.id}`)
+          } else {
+            query = query.eq('assigned_to', user.id)
+          }
         }
 
         const { data, error: pageError } = await query
@@ -336,7 +361,7 @@ const GanttPage = () => {
     } finally {
       setLocalLoading(false)
     }
-  }, [profile])
+  }, [profile, user])
 
   const fetchUsers = useCallback(async () => {
     try {

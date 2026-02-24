@@ -100,9 +100,15 @@ export default function AddTaskPage() {
         .select('id, first_name, last_name, department_id, active')
         .eq('active', true)
 
-      // Jeśli użytkownik jest kierownikiem, pokaż tylko pracowników z jego działu
-      if (profile.role === 'kierownik' && profile.department_id) {
-        usersQuery = usersQuery.eq('department_id', profile.department_id)
+      // Jeśli użytkownik jest kierownikiem, pokaż pracowników ze wszystkich jego działów
+      if (profile.role === 'kierownik') {
+        if (userDepartmentIds.length > 0) {
+          // Pokaż pracowników ze wszystkich działów użytkownika
+          usersQuery = usersQuery.in('department_id', userDepartmentIds)
+        } else if (profile.department_id) {
+          // Fallback do głównego działu jeśli brak w user_departments
+          usersQuery = usersQuery.eq('department_id', profile.department_id)
+        }
       }
       // Jeśli użytkownik jest pracownikiem, pokaż tylko siebie
       else if (profile.role !== 'dyrektor' && profile.role !== 'superadmin') {

@@ -97,7 +97,15 @@ export default function DashboardPage() {
 
     try {
       const timestamp = new Date().toISOString()
-      
+
+      // Pobierz działy użytkownika z user_departments
+      const { data: userDepts } = await supabase
+        .from('user_departments')
+        .select('department_id')
+        .eq('user_id', user.id)
+
+      const userDepartmentIds = userDepts?.map(d => d.department_id) || []
+
       // Paginated fetch - PostgREST max_rows=1000
       const PAGE_SIZE = 1000
       let allTasks: TaskWithDetails[] = []
@@ -118,16 +126,22 @@ export default function DashboardPage() {
         if (profile.role === 'superadmin' || profile.role === 'dyrektor') {
           // Dyrektor/Superadmin widzi wszystkie zadania
         } else if (profile.role === 'kierownik') {
-          // Kierownik widzi zadania swojego działu
-          if (profile.department_id) {
+          // Kierownik widzi zadania ze wszystkich swoich działów
+          if (userDepartmentIds.length > 0) {
+            query = query.in('department_id', userDepartmentIds)
+          } else if (profile.department_id) {
+            // Fallback do głównego działu jeśli brak w user_departments
             query = query.eq('department_id', profile.department_id)
           }
         } else {
-          // Pracownik widzi zadania swojego działu i przypisane do niego
-          if (profile.department_id) {
-            query = query.eq('department_id', profile.department_id)
+          // Pracownik widzi zadania ze swoich działów i przypisane do niego
+          if (userDepartmentIds.length > 0) {
+            query = query.or(`department_id.in.(${userDepartmentIds.join(',')}),assigned_to.eq.${user.id},created_by.eq.${user.id}`)
+          } else if (profile.department_id) {
+            query = query.or(`department_id.eq.${profile.department_id},assigned_to.eq.${user.id},created_by.eq.${user.id}`)
+          } else {
+            query = query.or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`)
           }
-          query = query.or(`assigned_to.eq.${user.id},created_by.eq.${user.id}`)
         }
 
         const { data, error: pageError } = await query

@@ -7,13 +7,13 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase-server';
+import { createSupabaseServerClient } from '@/lib/supabase-server';
 import { testFitnetConnection, queryFitnet, closeFitnetConnection } from '@/lib/fitnet-db';
 
 export async function GET(request: NextRequest) {
   try {
     // 1. Weryfikacja użytkownika
-    const supabase = createServerClient();
+    const supabase = await createSupabaseServerClient(request);
     const {
       data: { user },
       error: authError,
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
       .eq('id', user.id)
       .single();
 
-    if (!userProfile || userProfile.role !== 'superadmin') {
+    if (!userProfile || (userProfile as any).role !== 'superadmin') {
       return NextResponse.json(
         { error: 'Forbidden - tylko superadmin' },
         { status: 403 }

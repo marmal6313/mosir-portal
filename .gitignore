@@ -50,4 +50,15 @@ supabase.tar.gz
 
 # K8s secrets (real credentials)
 k8s/app/secret.env
+k8s/app/fitnet-secret.yaml
 kube-proxy-ds.yaml
+
+# Fitnet database inspection output
+fitnet-structure.txt
+
+# MCP config (contains tokens)
+.mcp.json
+
+# Sentry
+.sentryclirc
+sentry.properties

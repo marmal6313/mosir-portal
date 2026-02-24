@@ -122,9 +122,15 @@ export default function DashboardPage() {
           .order('created_at', { ascending: false })
           .range(from, to)
 
+        // CRITICAL: Always filter by organization_id for multi-tenant isolation
+        const orgId = (profile as any).organization_id
+        if (orgId) {
+          query = query.eq('organization_id', orgId)
+        }
+
         // Logika pobierania zadań na podstawie roli
         if (profile.role === 'superadmin' || profile.role === 'dyrektor') {
-          // Dyrektor/Superadmin widzi wszystkie zadania
+          // Dyrektor/Superadmin widzi wszystkie zadania (w swojej organizacji)
         } else if (profile.role === 'kierownik') {
           // Kierownik widzi zadania ze wszystkich swoich działów
           if (userDepartmentIds.length > 0) {

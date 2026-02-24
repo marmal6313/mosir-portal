@@ -57,7 +57,7 @@ export default function AddTaskPage() {
       // Ustaw ID użytkownika dla hooka
       setCurrentUserId(user.id)
 
-      // Pobierz profil użytkownika z tabeli users (ma department_id)
+      // Pobierz profil użytkownika z tabeli users (ma department_id i organization_id)
       const { data: profile } = await supabase
         .from('users')
         .select('*')
@@ -67,6 +67,13 @@ export default function AddTaskPage() {
       if (!profile) return
 
       setUserProfile(profile)
+
+      // Bezpieczeństwo: sprawdź czy użytkownik ma organization_id
+      const orgId = (profile as any).organization_id
+      if (!orgId) {
+        console.error('User has no organization_id - cannot load departments')
+        return
+      }
 
       // Pobierz działy użytkownika z user_departments
       const { data: userDepts } = await supabase
@@ -79,6 +86,11 @@ export default function AddTaskPage() {
       // Pobierz działy zgodnie z uprawnieniami
       let departmentsQuery = supabase.from('departments').select('*')
 
+      // CRITICAL: Always filter by organization_id for multi-tenant isolation
+      if (orgId) {
+        departmentsQuery = departmentsQuery.eq('organization_id', orgId)
+      }
+
       // Jeśli użytkownik jest kierownikiem lub pracownikiem, pokaż tylko jego działy
       if (profile.role !== 'dyrektor' && profile.role !== 'superadmin') {
         if (userDepartmentIds.length > 0) {
@@ -89,7 +101,7 @@ export default function AddTaskPage() {
           departmentsQuery = departmentsQuery.eq('id', profile.department_id)
         }
       }
-      // Dla dyrektora i superadmina pokaż wszystkie działy
+      // Dla dyrektora i superadmina pokaż wszystkie działy (w swojej organizacji)
 
       const { data: departmentsData } = await departmentsQuery
       setDepartments(departmentsData || [])
@@ -99,6 +111,11 @@ export default function AddTaskPage() {
         .from('users')
         .select('id, first_name, last_name, department_id, active')
         .eq('active', true)
+
+      // CRITICAL: Always filter by organization_id for multi-tenant isolation
+      if (orgId) {
+        usersQuery = usersQuery.eq('organization_id', orgId)
+      }
 
       // Jeśli użytkownik jest kierownikiem, pokaż pracowników ze wszystkich jego działów
       if (profile.role === 'kierownik') {

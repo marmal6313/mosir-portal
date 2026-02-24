@@ -176,11 +176,19 @@ export default function AddTaskPage() {
     }
 
     // Pobierz organization_id użytkownika
-    if (!userProfile?.organization_id) {
+    const orgId = (userProfile as any)?.organization_id
+    if (!orgId) {
+      console.error('Missing organization_id:', { userProfile })
       setError("Brak przypisania do organizacji")
       setLoading(false)
       return
     }
+
+    console.log('Creating task:', {
+      department_id: form.department_id,
+      created_by: user.id,
+      organization_id: orgId
+    })
 
     const { error } = await supabase.from('tasks').insert({
       title: form.title,
@@ -188,15 +196,16 @@ export default function AddTaskPage() {
       department_id: form.department_id ? Number(form.department_id) : null,
       assigned_to: form.assigned_to || null,
       created_by: user.id,
-      organization_id: userProfile.organization_id,
+      organization_id: orgId,
       priority: form.priority,
       status: 'new',
       start_date: form.start_date || null,
       due_date: form.due_date || null
     })
-    
+
     if (error) {
-      setError(error.message)
+      console.error('Task insert error:', error)
+      setError(`Błąd: ${error.message}`)
     } else {
       setSuccess("Zadanie zostało dodane!")
       setForm({ title: "", description: "", department_id: "", assigned_to: "", priority: "medium", start_date: "", due_date: "" })

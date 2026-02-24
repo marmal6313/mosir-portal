@@ -33,20 +33,22 @@ export function NotificationBell() {
     try {
       setLoading(true)
       const { data: { user } } = await supabase.auth.getUser()
-      
+
       if (!user) return
 
+      // Pobierz tylko nieprzeczytane powiadomienia (read = false lub null)
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', user.id)
+        .or('read.is.null,read.eq.false')
         .order('created_at', { ascending: false })
         .limit(20)
 
       if (error) throw error
 
       setNotifications(data || [])
-      setUnreadCount(data?.filter(n => !n.read).length || 0)
+      setUnreadCount(data?.length || 0)
     } catch (error) {
       console.error('Błąd podczas ładowania powiadomień:', error)
       toast({
@@ -100,10 +102,9 @@ export function NotificationBell() {
 
       if (error) throw error
 
-      setNotifications(prev => 
-        prev.map(n => 
-          n.id === notificationId ? { ...n, read: true } : n
-        )
+      // Usuń powiadomienie z listy po oznaczeniu jako przeczytane
+      setNotifications(prev =>
+        prev.filter(n => n.id !== notificationId)
       )
       setUnreadCount(prev => Math.max(0, prev - 1))
     } catch (error) {
@@ -120,13 +121,12 @@ export function NotificationBell() {
         .from('notifications')
         .update({ read: true })
         .eq('user_id', user.id)
-        .eq('read', false)
+        .or('read.is.null,read.eq.false')
 
       if (error) throw error
 
-      setNotifications(prev => 
-        prev.map(n => ({ ...n, read: true }))
-      )
+      // Wyczyść wszystkie powiadomienia z listy
+      setNotifications([])
       setUnreadCount(0)
     } catch (error) {
       console.error('Błąd podczas oznaczania wszystkich jako przeczytane:', error)
@@ -179,7 +179,7 @@ export function NotificationBell() {
       {isOpen && (
         <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
           <div className="p-4 border-b border-gray-200">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <h3 className="text-lg font-semibold">Powiadomienia</h3>
               <div className="flex items-center gap-2">
                 {unreadCount > 0 && (
@@ -187,16 +187,17 @@ export function NotificationBell() {
                     variant="ghost"
                     size="sm"
                     onClick={markAllAsRead}
-                    className="text-xs text-blue-600 hover:text-blue-800"
+                    className="text-xs text-blue-600 hover:text-blue-800 whitespace-nowrap"
+                    title="Oznacz wszystkie jako przeczytane"
                   >
-                    Oznacz wszystkie jako przeczytane
+                    Oznacz wszystkie
                   </Button>
                 )}
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => setIsOpen(false)}
-                  className="p-1"
+                  className="p-1 flex-shrink-0"
                 >
                   <X className="h-4 w-4" />
                 </Button>

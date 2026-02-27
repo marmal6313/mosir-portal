@@ -39,6 +39,30 @@
 
 ## Krok 0: 💾 Backup produkcyjnej bazy Fitnet (ZALECANE)
 
+### ⚠️ WAŻNE: Kiedy robić backup?
+
+Fitnet działa **24/7 produkcyjnie** - ludzie kupują bilety/karnety cały czas!
+
+**SPRAWDŹ OBCIĄŻENIE przed backupem:**
+```bash
+./scripts/check-fitnet-load.sh
+```
+
+Ten skrypt pokaże:
+- 👥 Ile osób używa systemu TERAZ
+- 💾 Rozmiar bazy
+- ⏱️ Szacowany czas backupu
+- ✅ Czy to DOBRY moment na backup
+
+**NAJLEPSZY MOMENT:**
+- 🌙 **Noc:** 23:00 - 06:00 (MOSiR zamknięty)
+- 📅 **Weekend:** Sobota/Niedziela rano
+- ⏰ **Teraz:** Tylko jeśli `check-fitnet-load.sh` pokazuje ✅
+
+📖 **Przeczytaj:** [docs/FITNET-BACKUP-SAFETY.md](docs/FITNET-BACKUP-SAFETY.md) - pełna analiza bezpieczeństwa
+
+---
+
 ### Utwórz backup produkcji:
 
 ```bash

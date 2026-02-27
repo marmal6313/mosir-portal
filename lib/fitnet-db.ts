@@ -38,6 +38,17 @@ let pool: sql.ConnectionPool | null = null;
  */
 export async function getFitnetConnection(): Promise<sql.ConnectionPool> {
   if (!pool) {
+    // Walidacja zmiennych środowiskowych
+    const useWindowsAuth = process.env.FITNET_DB_USE_WINDOWS_AUTH === 'true';
+    if (!useWindowsAuth && (!process.env.FITNET_DB_USER || !process.env.FITNET_DB_PASSWORD)) {
+      throw new Error(
+        'FITNET CONNECTION ERROR: Missing credentials. ' +
+        'Please set FITNET_DB_USER and FITNET_DB_PASSWORD environment variables, ' +
+        'or set FITNET_DB_USE_WINDOWS_AUTH=true for Windows Authentication. ' +
+        'Run: ./scripts/add-fitnet-env-dev.sh to configure.'
+      );
+    }
+
     console.log('🔌 Tworzę nowe połączenie do bazy Fitnet...');
     pool = await sql.connect(config);
 

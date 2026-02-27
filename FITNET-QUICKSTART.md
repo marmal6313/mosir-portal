@@ -5,17 +5,89 @@
 
 ---
 
-## 🎯 Plan 5 kroków (łącznie ~2h)
+## 🛡️ BEZPIECZNY WORKFLOW - Praca na backupie
 
-1. ✅ **Zbadaj strukturę bazy** (10 min)
-2. ✅ **Skonfiguruj zmienne K8s** (5 min)
-3. ⏳ **Uzupełnij zapytania SQL** (30 min) - po otrzymaniu struktury
-4. ⏳ **Testuj API** (15 min)
-5. ⏳ **Dodaj dashboard** (1h)
+**ZALECANE:** Pracuj na kopii bazy zamiast bezpośrednio na produkcji!
+
+### Workflow A: 🔒 Z backupem (BEZPIECZNE - POLECANE)
+
+1. 💾 **Backup produkcji** → `Fitnet_Backup_20260227.bak`
+2. 🔄 **Restore na testową bazę** → `Fitnet_Test`
+3. 🔍 **Inspekcja testowej bazy** → poznaj strukturę
+4. ⚙️ **Konfiguracja K8s** → wskaż na `Fitnet_Test`
+5. 🚀 **Pracuj bezpiecznie** - produkcja nietknięta!
+
+### Workflow B: ⚠️ Bez backupu (mniej bezpieczne)
+
+1. 🔍 **Inspekcja produkcji** (tylko SELECT)
+2. ⚙️ **Konfiguracja K8s** → wskaż na produkcję
+3. 🚀 **Pracuj ostrożnie** - read-only zabezpieczenia
 
 ---
 
-## Krok 1: Zbadaj strukturę bazy Fitnet
+## 🎯 Plan - Workflow A (z backupem) - łącznie ~2.5h
+
+0. 💾 **Backup bazy Fitnet** (15 min) - NOWY KROK
+1. 🔄 **Restore na testową bazę** (10 min) - NOWY KROK
+2. 🔍 **Zbadaj strukturę testowej bazy** (10 min)
+3. ⚙️ **Skonfiguruj zmienne K8s** (5 min)
+4. ✅ **Testuj API** (15 min)
+5. 🎨 **Uzupełnij zapytania SQL** (30 min) - po otrzymaniu struktury
+6. 📊 **Dodaj dashboard** (1h)
+
+---
+
+## Krok 0: 💾 Backup produkcyjnej bazy Fitnet (ZALECANE)
+
+### Utwórz backup produkcji:
+
+```bash
+./scripts/backup-fitnet-db.sh
+```
+
+Skrypt zapyta o:
+- **Nazwa bazy źródłowej:** `Fitnet` (lub inna)
+- **Username/Password:** dane do produkcyjnej bazy
+- **Gdzie zapisać backup:**
+  - Opcja 1: Na tym samym serwerze SQL (np. `C:\Backups`)
+  - Opcja 2: Na lokalnym serwerze MOSiR
+
+**Wynik:**
+- Plik backupu: `C:\Backups\Fitnet_Backup_20260227_143025.bak`
+- Backup używa `COPY_ONLY` - nie wpływa na produkcyjne backupy
+- Kompresja włączona (jeśli dostępna)
+
+**Czas:** ~5-15 minut (zależnie od rozmiaru bazy)
+
+---
+
+## Krok 1: 🔄 Restore backupu na testową bazę
+
+### Przywróć backup do nowej bazy testowej:
+
+```bash
+./scripts/restore-fitnet-backup.sh
+```
+
+Skrypt zapyta o:
+- **Serwer SQL:** `192.168.3.5\fitnet2`
+- **Nazwa testowej bazy:** `Fitnet_Test`
+- **Ścieżka do backupu:** `C:\Backups\Fitnet_Backup_20260227_143025.bak`
+- **Username/Password:** dane dostępowe
+
+**Co robi skrypt:**
+1. Sprawdza czy `Fitnet_Test` już istnieje (usuwa jeśli tak)
+2. Odczytuje zawartość backupu
+3. Przywraca backup do nowej bazy `Fitnet_Test`
+4. Ustawia bazę w tryb MULTI_USER
+
+**Wynik:** Gotowa baza testowa `Fitnet_Test` - identyczna kopia produkcji!
+
+**Czas:** ~10 minut
+
+---
+
+## Krok 2: 🔍 Zbadaj strukturę testowej bazy
 
 ### Automatycznie (najłatwiejsze):
 
@@ -24,47 +96,27 @@
 ```
 
 Podaj:
-- Nazwa bazy: `Fitnet` (lub inna jeśli znasz)
-- Uwierzytelnianie: `2` (SQL Server Authentication)
-- Username: `twój_login`
-- Password: `twoje_hasło`
+- **Nazwa bazy:** `Fitnet_Test` ← TESTOWA, nie produkcja!
+- **Uwierzytelnianie:** `2` (SQL Server Authentication)
+- **Username:** `twój_login`
+- **Password:** `twoje_hasło`
 
 **Wynik:** Plik `fitnet-structure.txt` z listą tabel i struktur.
 
 ---
 
-## Krok 2: Przeanalizuj wynik
+## Krok 3: ⚙️ Skonfiguruj zmienne środowiskowe w K8s
 
-Otwórz `fitnet-structure.txt` i znajdź:
-
-### 💰 Tabele ze sprzedażą
-Szukaj tabel zawierających:
-- Transakcje / Sprzedaż
-- Płatności / Faktury
-- Bilety / Karnety
-
-### 🏷️ Tabele z kategoriami
-Szukaj tabel z:
-- Produkty / Usługi
-- Kategorie
-
-### 📊 Kolumny które potrzebujemy:
-- **Data** (data_sprzedazy, created_at, transaction_date)
-- **Kwota** (kwota, amount, cena, price)
-- **Kategoria** (kategoria, category, typ)
-- **Produkt** (nazwa, product_name, usługa)
-
----
-
-## Krok 2: Skonfiguruj zmienne środowiskowe w K8s
-
-Po poznaniu struktury bazy (Krok 1), dodaj dane dostępowe do K8s:
+Dodaj dane dostępowe do **testowej bazy** w K8s:
 
 ```bash
 ./scripts/add-fitnet-env-to-k8s.sh
 ```
 
-Skrypt doda zmienne do istniejącego secretu `mosir-portal-env`.
+**WAŻNE:** Podaj nazwę **TESTOWEJ** bazy:
+- Server: `192.168.3.5\fitnet2`
+- Database: `Fitnet_Test` ← nie `Fitnet`!
+- Username/Password: te same dane
 
 Następnie restart deploymentu:
 ```bash
@@ -74,9 +126,9 @@ kubectl rollout status deployment/mosir-portal -n apps
 
 ---
 
-## Krok 3: Testuj połączenie
+## Krok 4: ✅ Testuj połączenie
 
-Test API (zaloguj się jako superadmin):
+Test API (zaloguj się jako superadmin w przeglądarce, potem):
 
 ```bash
 curl https://app.e-mosir.pl/api/fitnet/test
@@ -87,6 +139,9 @@ Powinieneś zobaczyć:
 {
   "success": true,
   "message": "Połączenie z bazą Fitnet działa!",
+  "connection": {
+    "database": "Fitnet_Test"  ← sprawdź czy to testowa!
+  },
   "diagnostics": {
     "tablesCount": 50,
     "tables": ["...", "..."]
@@ -94,9 +149,11 @@ Powinieneś zobaczyć:
 }
 ```
 
+✅ **Jeśli widzisz `Fitnet_Test` - działa! Pracujesz na bezpiecznej kopii!**
+
 ---
 
-## Krok 4: Wyślij mi strukturę bazy
+## Krok 5: 📤 Wyślij mi strukturę bazy
 
 Skopiuj zawartość `fitnet-structure.txt` lub output z `/api/fitnet/test`.
 
@@ -114,18 +171,50 @@ Potrzebuję zobaczyć:
 
 ---
 
-## Krok 5: Dokończę integrację
+## Krok 6: 🎨 Dokończę integrację
 
 Gdy dostanę strukturę, automatycznie:
 
 ✅ Uzupełnię zapytania SQL w `lib/fitnet-queries.ts`
-✅ Stworzę API endpoint `/api/fitnet/revenue/daily`
+✅ Zaktualizuję endpoint `/api/fitnet/revenue/daily`
 ✅ Dodam zakładkę "💰 Przychody" do Sidebar (tylko superadmin)
 ✅ Stworzę dashboard z:
    - Wykres przychodów
    - Rozbicie na kategorie (basen, fitness, itp.)
    - Statystyki dzienne/tygodniowe/miesięczne
    - Eksport do Excel
+
+**Czas:** ~1.5h po otrzymaniu struktury
+
+---
+
+## 🎉 Podsumowanie bezpieczeństwa
+
+### ✅ Co chroni produkcję:
+
+1. **Backup COPY_ONLY** - nie wpływa na łańcuch backupów produkcyjnych
+2. **Osobna baza testowa** - `Fitnet_Test` vs `Fitnet`
+3. **Read-only w kodzie** - `lib/fitnet-db.ts` blokuje INSERT/UPDATE/DELETE
+4. **Tylko SELECT** - wszystkie zapytania weryfikowane przed wykonaniem
+5. **K8s secrets** - hasła bezpiecznie przechowywane
+6. **Superadmin only** - tylko Ty masz dostęp na początku
+
+### 🔄 Kiedy przełączyć na produkcję?
+
+Po przetestowaniu na `Fitnet_Test`:
+1. Wszystko działa poprawnie
+2. Dashboard pokazuje dobre dane
+3. Gotowy do użycia przez kierowników
+
+Wtedy:
+```bash
+# Zmień nazwę bazy w K8s secret
+kubectl edit secret mosir-portal-env -n apps
+# Zmień: FITNET_DB_NAME: Fitnet_Test → FITNET_DB_NAME: Fitnet
+
+# Restart
+kubectl rollout restart deployment/mosir-portal -n apps
+```
 
 ---
 

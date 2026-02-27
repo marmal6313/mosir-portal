@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { createServerClient } from '@/lib/supabase-server';
+import { createSupabaseServerClient } from '@/lib/supabase-server';
 import FitnetLoadStatus from '@/components/fitnet/LoadStatus';
 import { Database, Server, HardDrive, AlertCircle } from 'lucide-react';
 
@@ -9,7 +9,7 @@ export const metadata = {
 };
 
 export default async function FitnetToolsPage() {
-  const supabase = createServerClient();
+  const supabase = await createSupabaseServerClient();
 
   // Sprawdź czy użytkownik jest zalogowany
   const {

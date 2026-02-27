@@ -5,15 +5,16 @@ import { useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { User } from '@supabase/supabase-js'
 import Image from 'next/image'
-import { 
-  LayoutDashboard, 
-  CheckSquare, 
-  FileText, 
+import {
+  LayoutDashboard,
+  CheckSquare,
+  FileText,
   MessageSquare,
-  Users, 
-  Settings, 
+  Users,
+  Settings,
   LogOut,
-  UserCircle
+  UserCircle,
+  Database
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -46,6 +47,8 @@ export default function Sidebar({ profile }: SidebarProps) {
       setActiveItem('Raporty')
     } else if (pathname.startsWith('/dashboard/gantt')) {
       setActiveItem('Wykres Gantta')
+    } else if (pathname.startsWith('/dashboard/fitnet-tools')) {
+      setActiveItem('Fitnet Tools')
     } else if (pathname === '/dashboard/settings') {
       setActiveItem('Ustawienia')
     }
@@ -89,10 +92,13 @@ export default function Sidebar({ profile }: SidebarProps) {
     { name: 'Raporty', href: '/dashboard/reports', icon: FileText },
     { name: 'Wykres Gantta', href: '/dashboard/gantt', icon: FileText },
     ...(profile?.role === 'superadmin' || profile?.role === 'dyrektor' || profile?.role === 'kierownik'
-      ? [{ name: 'Użytkownicy', href: '/dashboard/users', icon: Users }] 
+      ? [{ name: 'Użytkownicy', href: '/dashboard/users', icon: Users }]
+      : []),
+    ...(profile?.role === 'superadmin'
+      ? [{ name: 'Fitnet Tools', href: '/dashboard/fitnet-tools', icon: Database }]
       : []),
     ...(profile?.role === 'superadmin' || profile?.role === 'dyrektor'
-      ? [{ name: 'Ustawienia', href: '/dashboard/settings', icon: Settings }] 
+      ? [{ name: 'Ustawienia', href: '/dashboard/settings', icon: Settings }]
       : []),
   ]
 
@@ -116,7 +122,7 @@ export default function Sidebar({ profile }: SidebarProps) {
           </div>
           <div className="min-w-0">
             <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
-              {systemSettings.system_name || 'MOSiR Portal'}
+              {systemSettings.system_name || 'Drabio'}
             </h1>
             <p className="text-xs text-blue-600 font-medium truncate">
               {systemSettings.company_name || 'System Zarządzania'}

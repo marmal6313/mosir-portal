@@ -44,11 +44,22 @@
 Fitnet działa **24/7 produkcyjnie** - ludzie kupują bilety/karnety cały czas!
 
 **SPRAWDŹ OBCIĄŻENIE przed backupem:**
+
+#### Opcja A: 🌐 W przeglądarce (ZALECANE dla superadmin)
+1. Zaloguj się do https://app.e-mosir.pl jako superadmin
+2. Kliknij **"Fitnet Tools"** w menu (ikona 💾)
+3. Kliknij **"Sprawdź obciążenie"**
+4. Zobacz kolorową rekomendację:
+   - ✅ **Zielony** = możesz robić backup TERAZ
+   - ⚠️ **Żółty** = średnie obciążenie, lepiej poczekać
+   - ❌ **Czerwony** = duże obciążenie, poczekaj do wieczora/weekendu
+
+#### Opcja B: 💻 Z linii komend (serwer)
 ```bash
 ./scripts/check-fitnet-load.sh
 ```
 
-Ten skrypt pokaże:
+**Co pokaże:**
 - 👥 Ile osób używa systemu TERAZ
 - 💾 Rozmiar bazy
 - ⏱️ Szacowany czas backupu
